@@ -97,3 +97,45 @@ src/
 | GET    | `/api/health`      | Comprobación del estado del servidor |
 | GET    | `/api/events`       | Listado de eventos                   |
 | POST   | `/api/sessions/login` | Placeholder de login (sin lógica de auth aún) |
+
+## POST /api/sessions/register
+
+Registra un nuevo usuario. La contraseña se guarda hasheada con bcrypt y nunca se devuelve en la respuesta. El campo `role` siempre se fuerza a `user`, sin importar lo que venga en el body.
+
+**Body esperado (JSON):**
+| Campo | Tipo | Obligatorio |
+|---|---|---|
+| first_name | string | Sí |
+| last_name | string | Sí |
+| email | string | Sí (formato válido, se normaliza a minúsculas) |
+| password | string | Sí (mínimo 6 caracteres) |
+
+**Ejemplo de request:**
+\`\`\`json
+{
+  "first_name": "Ana",
+  "last_name": "Pérez",
+  "email": "Ana@Mail.com",
+  "password": "Secreta123"
+}
+\`\`\`
+
+**Respuesta 201 (éxito):**
+\`\`\`json
+{
+  "status": "success",
+  "payload": {
+    "id": "665f2a...",
+    "first_name": "Ana",
+    "last_name": "Pérez",
+    "email": "ana@mail.com",
+    "role": "user"
+  }
+}
+\`\`\`
+
+**Cómo probarlo:**
+1. Levantar el servidor: `npm run dev`
+2. Hacer `POST http://localhost:8080/api/sessions/register` con el body de ejemplo.
+3. Repetir la misma request: debe responder 409 (email duplicado).
+4. Probar sin `password` o con un email sin `@`: debe responder 400.
