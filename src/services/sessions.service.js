@@ -1,5 +1,6 @@
 import usersRepository from '../repositories/users.repository.js';
-import { hashPassword } from '../utils/hash.js';
+import { hashPassword, comparePassword } from '../utils/hash.js';
+import { generateToken } from '../utils/jwt.js';
 
 export class SessionsService {
     constructor(repository) {
@@ -8,7 +9,28 @@ export class SessionsService {
 
     async login(email, password) {
         const user = await this.repository.getByEmail(email);
-        return { user, authenticated: Boolean(user) };
+
+        if (!user) {
+            const error = new Error('Credenciales inválidas');
+            error.status = 401;
+            throw error;
+        }
+
+        const isValidPassword = await comparePassword(password, user.password);
+
+        if (!isValidPassword) {
+            const error = new Error('Credenciales inválidas');
+            error.status = 401;
+            throw error;
+        }
+
+        const token = generateToken({
+            id: user._id,
+            email: user.email,
+            role: user.role
+        });
+
+        return token;
     }
 
     async register({ first_name, last_name, email, password }) {
@@ -21,7 +43,7 @@ export class SessionsService {
             throw error;
         }
 
-        const hashedPassword = hashPassword(password);
+        const hashedPassword = await hashPassword(password);
 
         const newUser = await this.repository.create({
             first_name,

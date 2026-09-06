@@ -2,6 +2,7 @@ import sessionsService from '../services/sessions.service.js';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD_LENGTH = 6;
+const COOKIE_MAX_AGE = 3600000;
 
 export const register = async (req, res) => {
     try {
@@ -34,9 +35,36 @@ export const register = async (req, res) => {
 export const login = async (req, res) => {
     try {
         const { email, password } = req.body;
-        const result = await sessionsService.login(email, password);
-        res.status(200).json({ status: 'success', payload: result });
+
+        if (!email || !password) {
+            return res.status(400).json({ status: 'error', message: 'Faltan campos obligatorios' });
+        }
+
+        const token = await sessionsService.login(email, password);
+
+        res.cookie('currentUser', token, {
+            httpOnly: true,
+            sameSite: 'lax',
+            maxAge: COOKIE_MAX_AGE,
+            secure: process.env.NODE_ENV === 'production'
+        });
+
+        res.status(200).json({ status: 'success', message: 'Login correcto' });
     } catch (error) {
-        res.status(500).json({ status: 'error', message: error.message });
+        if (error.status === 401) {
+            return res.status(401).json({ status: 'error', message: error.message });
+        }
+        console.error(error);
+        res.status(500).json({ status: 'error', message: 'Error interno del servidor' });
     }
+};
+
+export const current = (req, res) => {
+    const { id, email, role } = req.user;
+    res.status(200).json({ status: 'success', payload: { id, email, role } });
+};
+
+export const logout = (req, res) => {
+    res.clearCookie('currentUser');
+    res.status(200).json({ status: 'success', message: 'Sesión cerrada' });
 };
