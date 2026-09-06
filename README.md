@@ -64,34 +64,33 @@ Al iniciar, el servidor se conecta primero a MongoDB (usando `MONGO_URL`) y reci
 ## Estructura de carpetas
 
 src/
-├── app.js # Configura Express (middlewares, rutas). No levanta el server.
-├── server.js # Conecta a MongoDB y levanta el servidor.
+├── app.js                       # Configura Express (middlewares, rutas). No levanta el server.
+├── server.js                    # Conecta a MongoDB y levanta el servidor.
 ├── config/
-│ └── db.config.js # Conexión a MongoDB con Mongoose.
+│   └── db.config.js             # Conexión a MongoDB con Mongoose.
 ├── routes/
-│ ├── events.router.js
-│ └── sessions.router.js
+│   ├── events.router.js
+│   └── sessions.router.js
 ├── controllers/
-│ ├── events.controller.js
-│ └── sessions.controller.js
+│   ├── events.controller.js
+│   └── sessions.controller.js
 ├── services/
-│ ├── events.service.js
-│ └── sessions.service.js
+│   ├── events.service.js
+│   └── sessions.service.js
 ├── repositories/
-│ ├── events.repository.js
-│ └── users.repository.js
+│   ├── events.repository.js
+│   └── users.repository.js
 ├── dao/
-│ ├── events.dao.js
-│ └── users.dao.js
+│   ├── events.dao.js
+│   └── users.dao.js
 ├── models/
-│ ├── Event.js
-│ └── User.js
+│   ├── Event.js
+│   └── User.js
 ├── middlewares/
-│ └── auth.middleware.js
+│   └── auth.middleware.js
 └── utils/
-├── hash.js
-└── jwt.js
-
+    ├── hash.js
+    └── jwt.js
 
 ## Rutas disponibles
 
