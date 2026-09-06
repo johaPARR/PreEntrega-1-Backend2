@@ -30,12 +30,14 @@ El proyecto sigue una separación en capas para aislar responsabilidades y facil
 
 Flujo de una request, por ejemplo `GET /api/events`:
 
+​```
 Router (events.router.js)
-→ Controller (events.controller.js)
-→ Service (events.service.js)
-→ Repository (events.repository.js)
-→ DAO (events.dao.js)
-→ Modelo Mongoose (Event.js) → MongoDB
+  → Controller (events.controller.js)
+    → Service (events.service.js)
+      → Repository (events.repository.js)
+        → DAO (events.dao.js)
+          → Modelo Mongoose (Event.js) → MongoDB
+​```
 
 
 ## Instalación
@@ -63,6 +65,7 @@ Al iniciar, el servidor se conecta primero a MongoDB (usando `MONGO_URL`) y reci
 
 ## Estructura de carpetas
 
+```
 src/
 ├── app.js                       # Configura Express (middlewares, rutas). No levanta el server.
 ├── server.js                    # Conecta a MongoDB y levanta el servidor.
@@ -91,6 +94,7 @@ src/
 └── utils/
     ├── hash.js
     └── jwt.js
+```
 
 ## Rutas disponibles
 
