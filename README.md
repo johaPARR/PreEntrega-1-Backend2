@@ -4,13 +4,19 @@
 
 API REST desarrollada con Node.js y Express para la gestión de eventos e inscripciones, implementando una arquitectura profesional por capas (Router → Controller → Service → Repository → DAO → Modelo).
 
-Esta pre-entrega corresponde a la base arquitectónica del proyecto final de Backend II: todavía no incluye autenticación completa, roles ni gestión de inscripciones; el objetivo de esta etapa es dejar armada la estructura por capas y la conexión a la base de datos.
+
+Este repositorio corresponde a la **Pre-entrega 4 de Backend II (Coderhouse): Autenticación centralizada con Passport.js**.
+Incluye: arquitectura por capas, conexión a MongoDB con Mongoose, registro de usuarios con contraseñas hasheadas (bcrypt), autenticación centralizada con Passport.js (estrategias locales y JWT en cookies HttpOnly), ruta protegida `/current` y logout. Roles avanzados y gestión de inscripciones a eventos quedan para próximas entregas.
 
 ## Tecnologías
 
 - Node.js
 - Express
 - Mongoose (MongoDB)
+- Passport.js (`passport-local`, `passport-jwt`)
+- JSON Web Token (`jsonwebtoken`)
+- Bcrypt
+- Cookie-parser
 - Dotenv
 - Nodemon (entorno de desarrollo)
 
@@ -39,12 +45,23 @@ Router (events.router.js)
           → Modelo Mongoose (Event.js) → MongoDB
 ​```
 
+## Autenticación con Passport.js
+El sistema centraliza todas las estrategias de autenticación en `src/config/passport.config.js`:
+1. **Estrategia `'register'` (Local Strategy)**: Valida obligatoriedad de campos, formato de email, longitud de contraseña (mínimo 6 caracteres), normaliza el email a minúsculas, hashea con bcrypt, verifica unicidad contra la base de datos y fuerza el rol por defecto `user`. La ruta delega limpiamente con `passport.authenticate('register')`.
+2. **Estrategia `'login'` (Local Strategy)**: Valida credenciales contra la base de datos. Si son inválidas, devuelve mensaje genérico (401). El controller es el responsable exclusivo de generar el JWT y guardarlo en la cookie `currentUser` HttpOnly.
+3. **Estrategia `'current'` (JWT Strategy)**: Lee y valida el JWT directamente desde la cookie `currentUser` mediante un extractor personalizado. Deja el payload del usuario disponible en `req.user` y protege la ruta respondiendo 401 si no hay token válido, o 200 con `{ id, email, role }` sin password.
+4. **Logout**: `POST /api/sessions/logout` limpia la cookie `currentUser` del cliente; no requiere pasar por Passport.
+
+
+### Preparación para Providers Externos (OAuth)
+La arquitectura está modularizada para que incorporar nuevos proveedores externos (como **Google OAuth** o **GitHub OAuth**) solo requiera registrar su respectiva estrategia dentro de `src/config/passport.config.js` (`passport.use('google', ...)` / `passport.use('github', ...)`), **sin necesidad de modificar `app.js` ni alterar la configuración global del servidor**.
+
 
 ## Instalación
 
 1. Clonar el repositorio.
 2. Ejecutar `npm install` para instalar las dependencias.
-3. Crear un archivo `.env` en la raíz del proyecto basándose en `src/.env.example`.
+3. Crear un archivo `.env` en la raíz del proyecto basándose en `.env.example`.
 
 ## Variables de entorno
 
@@ -70,7 +87,8 @@ src/
 ├── app.js                       # Configura Express (middlewares, rutas). No levanta el server.
 ├── server.js                    # Conecta a MongoDB y levanta el servidor.
 ├── config/
-│   └── db.config.js             # Conexión a MongoDB con Mongoose.
+│   ├── db.config.js
+│   └── passport.config.js       # Estrategias centralizadas de Passport            # Conexión a MongoDB con Mongoose.
 ├── routes/
 │   ├── events.router.js
 │   └── sessions.router.js
@@ -191,7 +209,7 @@ Valida el email y la contraseña. Si son correctos, genera un JWT con `{ id, ema
 
 ## GET /api/sessions/current
 
-Ruta protegida. El middleware `authMiddleware` lee la cookie `currentUser`, verifica el JWT y, si es válido, guarda el payload en `req.user`. Devuelve los datos del usuario autenticado sin el password.
+Ruta protegida. La estrategia 'current' de Passport lee la cookie currentUser, verifica el JWT y, si es válido, guarda el payload en `req.user`. Devuelve los datos del usuario autenticado sin el password.
 
 **Respuesta 200 (con cookie válida):**
 \`\`\`json
