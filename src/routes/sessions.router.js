@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import passport from '../config/passport.config.js';
 import { register, login, current, logout } from '../controllers/sessions.controller.js';
+import { authenticate } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 
@@ -29,20 +30,9 @@ const authenticateLogin = (req, res, next) => {
     })(req, res, next);
 };
 
-const authenticateCurrent = (req, res, next) => {
-    passport.authenticate('current', { session: false }, (err, user) => {
-        if (err) return next(err);
-        if (!user) {
-            return res.status(401).json({ status: 'error', message: 'No autenticado' });
-        }
-        req.user = user;
-        next();
-    })(req, res, next);
-};
-
 router.post('/register', authenticateRegister, register);
 router.post('/login', authenticateLogin, login);
-router.get('/current', authenticateCurrent, current);
+router.get('/current', authenticate, current);
 router.post('/logout', logout);
 
 export default router;
