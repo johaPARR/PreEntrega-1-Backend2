@@ -63,8 +63,13 @@ describe('Tests Automatizados — Pre-entrega 5: Roles y Autorización', () => {
             const mockCreatedEvent = {
                 _id: '6690aabbccddeeff00112233',
                 title: 'Conferencia Tech 2026',
+                description: 'Descripción',
+                category: 'tech',
                 date: '2026-11-15',
-                status: 'active',
+                location: 'Auditorio',
+                capacity: 100,
+                price: 0,
+                status: 'draft',
                 organizer: organizerPayload.id
             };
 
@@ -73,11 +78,18 @@ describe('Tests Automatizados — Pre-entrega 5: Roles y Autorización', () => {
             const res = await request(app)
                 .post('/api/events')
                 .set('Cookie', [`currentUser=${organizerToken}`])
-                .send({ title: 'Conferencia Tech 2026', date: '2026-11-15' });
+                .send({ 
+                    title: 'Conferencia Tech 2026', 
+                    description: 'Descripción', 
+                    category: 'tech', 
+                    date: '2026-11-15', 
+                    location: 'Auditorio', 
+                    capacity: 100 
+                });
 
             expect(res.status).toBe(201);
             expect(res.body.status).toBe('success');
-            expect(res.body.payload).toHaveProperty('id', mockCreatedEvent._id);
+            expect(res.body.payload).toHaveProperty('_id', mockCreatedEvent._id);
             expect(res.body.payload.title).toBe('Conferencia Tech 2026');
             expect(res.body.payload.organizer).toBe(organizerPayload.id);
         });
@@ -119,7 +131,6 @@ describe('Tests Automatizados — Pre-entrega 5: Roles y Autorización', () => {
             expect(res.status).toBe(200);
             expect(res.body.status).toBe('success');
             expect(res.body.payload).toEqual(mockUsers);
-            // Verificar que no se exponga la contraseña
             res.body.payload.forEach(u => expect(u.password).toBeUndefined());
         });
     });
@@ -131,7 +142,7 @@ describe('Tests Automatizados — Pre-entrega 5: Roles y Autorización', () => {
                 _id: '66901234567890abcdef1234',
                 title: 'Evento de Otro',
                 date: '2026-10-10',
-                status: 'active',
+                status: 'draft',
                 organizer: otherOrganizerId
             };
 
@@ -152,16 +163,14 @@ describe('Tests Automatizados — Pre-entrega 5: Roles y Autorización', () => {
                 _id: '66901234567890abcdef1234',
                 title: 'Mi Evento Original',
                 date: '2026-10-10',
-                status: 'active',
+                status: 'draft',
                 organizer: organizerPayload.id
             };
 
             const updatedEvent = { ...ownEvent, title: 'Mi Evento Modificado' };
 
-            jest.spyOn(eventsService, 'getEventById')
-                .mockResolvedValueOnce(ownEvent)
-                .mockResolvedValueOnce(updatedEvent);
-            jest.spyOn(eventsService, 'updateEvent').mockResolvedValue({});
+            jest.spyOn(eventsService, 'getEventById').mockResolvedValue(ownEvent);
+            jest.spyOn(eventsService, 'updateEvent').mockResolvedValue(updatedEvent);
 
             const res = await request(app)
                 .put(`/api/events/${ownEvent._id}`)

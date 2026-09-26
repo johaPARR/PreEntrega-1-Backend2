@@ -1,7 +1,7 @@
 {
-  "name": "pre-entrega5-backend2",
+  "name": "pre-entrega6-backend2",
   "version": "1.0.0",
-  "description": "Plataforma de eventos e inscripciones - Pre-entrega 5: Roles y autorización",
+  "description": "Plataforma de eventos e inscripciones - Pre-entrega 6: Entidad events y lógica de negocio",
   "type": "module",
   "main": "src/server.js",
   "scripts": {
