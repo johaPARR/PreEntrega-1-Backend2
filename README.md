@@ -18,6 +18,7 @@ Incluye: arquitectura por capas, conexión a MongoDB con Mongoose, registro de u
 - Cookie-parser
 - Dotenv
 - Nodemon (entorno de desarrollo)
+- Jest y Supertest (tests automatizados)
 
 ## Arquitectura del proyecto
 
@@ -519,6 +520,14 @@ Como el registro público solo crea usuarios `user`, para probar los demás role
 | 6 | `organizer` modificando un evento ajeno | 403 | ✅ |
 | Extra | `admin` modificando el evento de un organizer | 200 | ✅ |
 | Extra | `organizer` modificando su propio evento | 200 | ✅ |
+
+### Tests automatizados (Jest + Supertest)
+
+El proyecto incluye una suite de tests automatizados que valida todos los casos de la matriz de permisos y el control de propiedad sin depender de servicios externos:
+
+```bash
+npm test
+```
 
 ## Evidencia
 
