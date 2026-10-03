@@ -3,12 +3,12 @@ import mongoose from "mongoose";
 const ticketSchema = new mongoose.Schema({
   user: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: "User",
+    ref: "users",
     required: true,
   },
   event: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: "Event",
+    ref: "events",
     required: true,
   },
   status: {
