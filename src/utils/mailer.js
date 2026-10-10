@@ -33,3 +33,23 @@ export const sendTicketConfirmation = async ({ to, event, ticket }) => {
     ].join("\n"),
   });
 };
+export const sendTicketCancellation = async ({ to, event, ticket }) => {
+  const transporter = createTransporter();
+
+  const eventDate = new Date(event.date).toLocaleDateString("es-AR");
+
+  await transporter.sendMail({
+    from: process.env.MAIL_FROM,
+    to,
+    subject: `Inscripción cancelada: ${event.title}`,
+    text: [
+      "Tu inscripción fue cancelada.",
+      "",
+      `Evento: ${event.title}`,
+      `Fecha: ${eventDate}`,
+      `Lugar: ${event.location}`,
+      `Cantidad de lugares liberados: ${ticket.quantity}`,
+      `Código de reserva: ${ticket.reservationCode}`,
+    ].join("\n"),
+  });
+};

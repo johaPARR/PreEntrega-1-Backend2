@@ -48,6 +48,11 @@ const eventSchema = new mongoose.Schema({
         ref: 'users', 
         required: [true, 'El organizador es obligatorio'],
         immutable: true 
+    },
+    reservedSeats: {
+        type: Number,
+        default: 0,
+        min: [0, 'Los lugares reservados no pueden ser negativos']
     }
 }, { timestamps: true });
 

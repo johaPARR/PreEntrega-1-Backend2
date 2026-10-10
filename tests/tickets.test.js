@@ -7,13 +7,15 @@ process.env.JWT_SECRET = TEST_JWT_SECRET;
 
 // El mailer se mockea ANTES de importar la app: los tests nunca envían emails reales
 jest.unstable_mockModule('../src/utils/mailer.js', () => ({
-    sendTicketConfirmation: jest.fn().mockResolvedValue(undefined)
+    sendTicketConfirmation: jest.fn().mockResolvedValue(undefined),
+    sendTicketCancellation: jest.fn().mockResolvedValue(undefined)
 }));
 
 const { default: app } = await import('../src/app.js');
 const { default: eventsService } = await import('../src/services/events.service.js');
+const { default: eventsRepository } = await import('../src/repositories/events.repository.js');
 const { default: ticketsRepository } = await import('../src/repositories/tickets.repository.js');
-const { sendTicketConfirmation } = await import('../src/utils/mailer.js');
+const { sendTicketConfirmation, sendTicketCancellation } = await import('../src/utils/mailer.js');
 
 const createToken = (payload) => jwt.sign(payload, TEST_JWT_SECRET, { expiresIn: '1h' });
 
@@ -39,6 +41,7 @@ const buildEvent = (overrides = {}) => ({
     date: futureDate,
     location: 'Córdoba',
     capacity: 5,
+    reservedSeats: 0,
     price: 0,
     status: 'published',
     organizer: organizerPayload.id,
@@ -55,12 +58,37 @@ const buildTicket = (overrides = {}) => ({
     ...overrides
 });
 
-// Prepara los mocks de la inscripción y devuelve el spy de createTicket
-const mockEnrollment = ({ event = buildEvent(), occupied = 0, active = null } = {}) => {
+// Prepara los mocks de la inscripción y devuelve los spies principales.
+// - reserved: si es false, la reserva atómica de cupo devuelve null (no hay cupo)
+// - reservedSeats: lugares ya reservados que ve el service al calcular los disponibles
+const mockEnrollment = ({
+    event = buildEvent(),
+    reserved = true,
+    reservedSeats = 0,
+    active = null
+} = {}) => {
     jest.spyOn(eventsService, 'getEventById').mockResolvedValue(event);
-    jest.spyOn(ticketsRepository, 'getOccupiedSeats').mockResolvedValue(occupied);
     jest.spyOn(ticketsRepository, 'findActiveTicket').mockResolvedValue(active);
-    return jest.spyOn(ticketsRepository, 'createTicket').mockResolvedValue(buildTicket());
+    const reserveSpy = jest
+        .spyOn(eventsRepository, 'reserveSeats')
+        .mockResolvedValue(reserved ? buildEvent({ reservedSeats: 2 }) : null);
+    jest.spyOn(eventsRepository, 'getById').mockResolvedValue(buildEvent({ reservedSeats }));
+    const releaseSpy = jest.spyOn(eventsRepository, 'releaseSeats').mockResolvedValue(buildEvent());
+    const createSpy = jest.spyOn(ticketsRepository, 'createTicket').mockResolvedValue(buildTicket());
+    return { createSpy, reserveSpy, releaseSpy };
+};
+
+// Prepara los mocks de la cancelación y devuelve los spies principales
+const mockCancellation = ({ ticket = buildTicket() } = {}) => {
+    jest.spyOn(ticketsRepository, 'getTicketById').mockResolvedValue(ticket);
+    jest.spyOn(eventsService, 'getEventById').mockResolvedValue(buildEvent());
+    const cancelSpy = jest.spyOn(ticketsRepository, 'cancelTicket').mockResolvedValue({
+        ...ticket,
+        status: 'cancelled',
+        cancelledAt: new Date().toISOString()
+    });
+    const releaseSpy = jest.spyOn(eventsRepository, 'releaseSeats').mockResolvedValue(buildEvent());
+    return { cancelSpy, releaseSpy };
 };
 
 describe('Tests Automatizados — Pre-entrega 7: Tickets, inscripciones y control de cupos', () => {
@@ -73,8 +101,8 @@ describe('Tests Automatizados — Pre-entrega 7: Tickets, inscripciones y contro
     });
 
     describe('1. Inscripción (POST /api/events/:eid/tickets)', () => {
-        test('Inscripción exitosa responde 201 y envía el email de confirmación', async () => {
-            const createSpy = mockEnrollment();
+        test('Inscripción exitosa responde 201, reserva el cupo y envía el email de confirmación', async () => {
+            const { createSpy, reserveSpy } = mockEnrollment();
 
             const res = await request(app)
                 .post(`/api/events/${eventId}/tickets`)
@@ -85,6 +113,8 @@ describe('Tests Automatizados — Pre-entrega 7: Tickets, inscripciones y contro
             expect(res.body.status).toBe('success');
             expect(res.body.payload.status).toBe('confirmed');
             expect(res.body.payload.reservationCode).toBe('TCK-A1B2C3D4');
+            // El cupo se reserva de forma atómica antes de crear el ticket
+            expect(reserveSpy).toHaveBeenCalledWith(eventId, 2);
             // El ticket guarda solo referencias (ids), no objetos completos
             expect(createSpy).toHaveBeenCalledWith(
                 expect.objectContaining({
@@ -137,7 +167,7 @@ describe('Tests Automatizados — Pre-entrega 7: Tickets, inscripciones y contro
         });
 
         test('Inscripción a evento cancelado responde 400', async () => {
-            mockEnrollment({ event: buildEvent({ status: 'cancelled' }) });
+            const { reserveSpy } = mockEnrollment({ event: buildEvent({ status: 'cancelled' }) });
 
             const res = await request(app)
                 .post(`/api/events/${eventId}/tickets`)
@@ -146,10 +176,11 @@ describe('Tests Automatizados — Pre-entrega 7: Tickets, inscripciones y contro
 
             expect(res.status).toBe(400);
             expect(res.body.message).toBe('El evento está cancelado');
+            expect(reserveSpy).not.toHaveBeenCalled();
         });
 
         test('Inscripción a evento finalizado responde 400', async () => {
-            mockEnrollment({ event: buildEvent({ status: 'finished' }) });
+            const { reserveSpy } = mockEnrollment({ event: buildEvent({ status: 'finished' }) });
 
             const res = await request(app)
                 .post(`/api/events/${eventId}/tickets`)
@@ -158,10 +189,11 @@ describe('Tests Automatizados — Pre-entrega 7: Tickets, inscripciones y contro
 
             expect(res.status).toBe(400);
             expect(res.body.message).toBe('El evento ya finalizó');
+            expect(reserveSpy).not.toHaveBeenCalled();
         });
 
         test('Inscripción con quantity 0 responde 400', async () => {
-            const createSpy = mockEnrollment();
+            const { createSpy, reserveSpy } = mockEnrollment();
 
             const res = await request(app)
                 .post(`/api/events/${eventId}/tickets`)
@@ -169,12 +201,13 @@ describe('Tests Automatizados — Pre-entrega 7: Tickets, inscripciones y contro
                 .send({ quantity: 0 });
 
             expect(res.status).toBe(400);
+            expect(reserveSpy).not.toHaveBeenCalled();
             expect(createSpy).not.toHaveBeenCalled();
         });
 
         test('Inscripción sin cupo suficiente responde 409 con mensaje claro y no crea el ticket', async () => {
-            // capacity 5, ya hay 3 ocupados -> quedan 2, pide 4
-            const createSpy = mockEnrollment({ occupied: 3 });
+            // capacity 5, ya hay 3 reservados -> quedan 2, pide 4: la reserva atómica devuelve null
+            const { createSpy } = mockEnrollment({ reserved: false, reservedSeats: 3 });
 
             const res = await request(app)
                 .post(`/api/events/${eventId}/tickets`)
@@ -187,8 +220,8 @@ describe('Tests Automatizados — Pre-entrega 7: Tickets, inscripciones y contro
             expect(sendTicketConfirmation).not.toHaveBeenCalled();
         });
 
-        test('Inscripción duplicada con ticket activo responde 409', async () => {
-            const createSpy = mockEnrollment({ active: buildTicket() });
+        test('Inscripción duplicada con ticket activo responde 409 y no reserva cupo', async () => {
+            const { createSpy, reserveSpy } = mockEnrollment({ active: buildTicket() });
 
             const res = await request(app)
                 .post(`/api/events/${eventId}/tickets`)
@@ -197,7 +230,23 @@ describe('Tests Automatizados — Pre-entrega 7: Tickets, inscripciones y contro
 
             expect(res.status).toBe(409);
             expect(res.body.message).toBe('Ya tenés una inscripción activa para este evento');
+            expect(reserveSpy).not.toHaveBeenCalled();
             expect(createSpy).not.toHaveBeenCalled();
+        });
+
+        test('Si falla la creación del ticket, se devuelve el cupo reservado', async () => {
+            const { createSpy, releaseSpy } = mockEnrollment();
+            jest.spyOn(console, 'error').mockImplementation(() => {});
+            createSpy.mockRejectedValueOnce(new Error('Error de base de datos'));
+
+            const res = await request(app)
+                .post(`/api/events/${eventId}/tickets`)
+                .set('Cookie', [`currentUser=${userToken}`])
+                .send({ quantity: 2 });
+
+            expect(res.status).toBeGreaterThanOrEqual(500);
+            expect(releaseSpy).toHaveBeenCalledWith(eventId, 2);
+            expect(sendTicketConfirmation).not.toHaveBeenCalled();
         });
     });
 
@@ -274,13 +323,8 @@ describe('Tests Automatizados — Pre-entrega 7: Tickets, inscripciones y contro
     });
 
     describe('4. Cancelación (PATCH /api/tickets/:tid/cancel)', () => {
-        test('El dueño cancela su ticket: 200, status cancelled y cancelledAt registrado', async () => {
-            jest.spyOn(ticketsRepository, 'getTicketById').mockResolvedValue(buildTicket());
-            const cancelSpy = jest.spyOn(ticketsRepository, 'cancelTicket').mockResolvedValue({
-                ...buildTicket(),
-                status: 'cancelled',
-                cancelledAt: new Date().toISOString()
-            });
+        test('El dueño cancela su ticket: 200, status cancelled, cancelledAt registrado y cupo liberado', async () => {
+            const { cancelSpy, releaseSpy } = mockCancellation();
 
             const res = await request(app)
                 .patch(`/api/tickets/${ticketId}/cancel`)
@@ -290,11 +334,39 @@ describe('Tests Automatizados — Pre-entrega 7: Tickets, inscripciones y contro
             expect(cancelSpy).toHaveBeenCalledWith(ticketId);
             expect(res.body.payload.status).toBe('cancelled');
             expect(res.body.payload.cancelledAt).toBeDefined();
+            // Al cancelar se devuelven al evento los lugares del ticket
+            expect(releaseSpy).toHaveBeenCalledWith(eventId, 2);
+        });
+
+        test('Cuando cancela el dueño se envía el email de cancelación', async () => {
+            mockCancellation();
+
+            const res = await request(app)
+                .patch(`/api/tickets/${ticketId}/cancel`)
+                .set('Cookie', [`currentUser=${userToken}`]);
+
+            expect(res.status).toBe(200);
+            expect(sendTicketCancellation).toHaveBeenCalledTimes(1);
+            expect(sendTicketCancellation).toHaveBeenCalledWith(
+                expect.objectContaining({ to: userPayload.email })
+            );
+        });
+
+        test('Si falla el envío del email de cancelación, la cancelación igual responde 200', async () => {
+            mockCancellation();
+            jest.spyOn(console, 'error').mockImplementation(() => {});
+            sendTicketCancellation.mockRejectedValueOnce(new Error('SMTP caído'));
+
+            const res = await request(app)
+                .patch(`/api/tickets/${ticketId}/cancel`)
+                .set('Cookie', [`currentUser=${userToken}`]);
+
+            expect(res.status).toBe(200);
+            expect(res.body.payload.status).toBe('cancelled');
         });
 
         test('Un user intentando cancelar un ticket ajeno recibe 403', async () => {
-            jest.spyOn(ticketsRepository, 'getTicketById').mockResolvedValue(buildTicket());
-            const cancelSpy = jest.spyOn(ticketsRepository, 'cancelTicket');
+            const { cancelSpy, releaseSpy } = mockCancellation();
 
             const res = await request(app)
                 .patch(`/api/tickets/${ticketId}/cancel`)
@@ -303,15 +375,11 @@ describe('Tests Automatizados — Pre-entrega 7: Tickets, inscripciones y contro
             expect(res.status).toBe(403);
             expect(res.body.message).toBe('No podés cancelar un ticket que no es tuyo');
             expect(cancelSpy).not.toHaveBeenCalled();
+            expect(releaseSpy).not.toHaveBeenCalled();
         });
 
-        test('Un admin puede cancelar el ticket de otro usuario', async () => {
-            jest.spyOn(ticketsRepository, 'getTicketById').mockResolvedValue(buildTicket());
-            jest.spyOn(ticketsRepository, 'cancelTicket').mockResolvedValue({
-                ...buildTicket(),
-                status: 'cancelled',
-                cancelledAt: new Date().toISOString()
-            });
+        test('Un admin puede cancelar el ticket de otro usuario y no se envía email al admin', async () => {
+            const { releaseSpy } = mockCancellation();
 
             const res = await request(app)
                 .patch(`/api/tickets/${ticketId}/cancel`)
@@ -319,12 +387,12 @@ describe('Tests Automatizados — Pre-entrega 7: Tickets, inscripciones y contro
 
             expect(res.status).toBe(200);
             expect(res.body.payload.status).toBe('cancelled');
+            expect(releaseSpy).toHaveBeenCalledWith(eventId, 2);
+            expect(sendTicketCancellation).not.toHaveBeenCalled();
         });
 
-        test('Cancelar un ticket ya cancelado responde 400', async () => {
-            jest.spyOn(ticketsRepository, 'getTicketById').mockResolvedValue(
-                buildTicket({ status: 'cancelled' })
-            );
+        test('Cancelar un ticket ya cancelado responde 400 y no libera cupo de nuevo', async () => {
+            const { releaseSpy } = mockCancellation({ ticket: buildTicket({ status: 'cancelled' }) });
 
             const res = await request(app)
                 .patch(`/api/tickets/${ticketId}/cancel`)
@@ -332,6 +400,7 @@ describe('Tests Automatizados — Pre-entrega 7: Tickets, inscripciones y contro
 
             expect(res.status).toBe(400);
             expect(res.body.message).toBe('El ticket ya está cancelado');
+            expect(releaseSpy).not.toHaveBeenCalled();
         });
 
         test('Cancelar un ticket inexistente responde 404', async () => {

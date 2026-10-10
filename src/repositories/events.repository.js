@@ -24,6 +24,16 @@ export class EventsRepository {
     delete(id) {
         return this.dao.delete(id);
     }
+
+    // Reserva cupo de forma atómica. Devuelve el evento actualizado o null si no hay cupo.
+    reserveSeats(id, quantity) {
+        return this.dao.reserveSeats(id, quantity);
+    }
+
+    // Libera cupo al cancelar una inscripción.
+    releaseSeats(id, quantity) {
+        return this.dao.releaseSeats(id, quantity);
+    }
 }
 
 export default new EventsRepository(eventsDao);

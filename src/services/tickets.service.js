@@ -1,8 +1,12 @@
 import crypto from "crypto";
 import mongoose from "mongoose";
 import ticketsRepository from "../repositories/tickets.repository.js";
+import eventsRepository from "../repositories/events.repository.js";
 import eventsService from "./events.service.js";
-import { sendTicketConfirmation } from "../utils/mailer.js";
+import {
+  sendTicketConfirmation,
+  sendTicketCancellation,
+} from "../utils/mailer.js";
 
 const createError = (status, message) => {
   const error = new Error(message);
@@ -46,30 +50,40 @@ class TicketsService {
       throw createError(400, "La cantidad debe ser un número entero mayor a 0");
     }
 
-    // 4. Hay cupos suficientes (los tickets cancelados no cuentan)
-    const occupied = await ticketsRepository.getOccupiedSeats(eventId);
-    const available = event.capacity - occupied;
-    if (qty > available) {
-      throw createError(
-        409,
-        `No hay cupos suficientes. Lugares disponibles: ${Math.max(available, 0)}`
-      );
-    }
-
-    // 5. El usuario no tiene ya un ticket activo para este evento
+    // 4. El usuario no tiene ya un ticket activo para este evento
     const existing = await ticketsRepository.findActiveTicket(user.id, eventId);
     if (existing) {
       throw createError(409, "Ya tenés una inscripción activa para este evento");
     }
 
-    // Crear el ticket (solo referencias, no objetos completos)
-    const ticket = await ticketsRepository.createTicket({
-      user: user.id,
-      event: eventId,
-      quantity: qty,
-      status: "confirmed",
-      reservationCode: generateReservationCode(),
-    });
+    // 5. Reservar cupo de forma atómica (evita sobreventa con pedidos simultáneos)
+    const reserved = await eventsRepository.reserveSeats(eventId, qty);
+    if (!reserved) {
+      const fresh = await eventsRepository.getById(eventId);
+      const available = Math.max(
+        (fresh?.capacity ?? 0) - (fresh?.reservedSeats ?? 0),
+        0
+      );
+      throw createError(
+        409,
+        `No hay cupos suficientes. Lugares disponibles: ${available}`
+      );
+    }
+
+    // 6. Crear el ticket (solo referencias). Si falla, se devuelve el cupo reservado
+    let ticket;
+    try {
+      ticket = await ticketsRepository.createTicket({
+        user: user.id,
+        event: eventId,
+        quantity: qty,
+        status: "confirmed",
+        reservationCode: generateReservationCode(),
+      });
+    } catch (error) {
+      await eventsRepository.releaseSeats(eventId, qty);
+      throw error;
+    }
 
     // Email de confirmación: si falla, la inscripción igual queda guardada
     try {
@@ -114,7 +128,23 @@ class TicketsService {
       throw createError(400, "El ticket ya está cancelado");
     }
 
-    return ticketsRepository.cancelTicket(ticketId);
+    const cancelled = await ticketsRepository.cancelTicket(ticketId);
+
+    // Liberar el cupo reservado
+    const eventId = ticket.event?._id ?? ticket.event;
+    await eventsRepository.releaseSeats(eventId, ticket.quantity);
+
+    // Email de cancelación: si falla, la cancelación igual queda guardada
+    try {
+      if (String(ticket.user) === String(user.id)) {
+        const event = await getExistingEvent(eventId);
+        await sendTicketCancellation({ to: user.email, event, ticket });
+      }
+    } catch (error) {
+      console.error("No se pudo enviar el email de cancelación:", error.message);
+    }
+
+    return cancelled;
   }
 }
 

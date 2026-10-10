@@ -135,7 +135,8 @@ export class EventsService {
             throw createError('No se puede modificar un evento cancelado', 400);
         }
 
-        // Validaciones sobre los campos que se deseen cambiar
+        // Validaciones sobre los campos que se deseen cambiar.
+        // Solo se copian campos permitidos: reservedSeats nunca se toma del body.
         const changes = {};
 
         if (updateData.title !== undefined) changes.title = updateData.title.trim();
@@ -153,6 +154,15 @@ export class EventsService {
         if (updateData.capacity !== undefined) {
             const cap = Number(updateData.capacity);
             if (isNaN(cap) || cap <= 0) throw createError('La capacidad debe ser mayor a 0', 400);
+
+            // Regla de negocio: la capacidad no puede ser menor a los lugares ya reservados
+            const reserved = event.reservedSeats ?? 0;
+            if (cap < reserved) {
+                throw createError(
+                    `La capacidad no puede ser menor a los lugares ya reservados (${reserved})`,
+                    400
+                );
+            }
             changes.capacity = cap;
         }
 

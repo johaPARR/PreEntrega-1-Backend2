@@ -49,6 +49,35 @@ export class EventsDao {
     async delete(id) {
         return EventModel.findByIdAndDelete(id).lean();
     }
+
+    // Reservar cupo de forma atómica: la condición y el incremento ocurren
+    // en una sola operación, así dos pedidos simultáneos no pueden sobrevender.
+    // Devuelve el evento actualizado, o null si no hay cupo suficiente.
+    async reserveSeats(id, quantity) {
+        return EventModel.findOneAndUpdate(
+            {
+                _id: id,
+                status: 'published',
+                $expr: {
+                    $lte: [
+                        { $add: [{ $ifNull: ['$reservedSeats', 0] }, quantity] },
+                        '$capacity'
+                    ]
+                }
+            },
+            { $inc: { reservedSeats: quantity } },
+            { new: true }
+        ).lean();
+    }
+
+    // Liberar cupo (al cancelar un ticket). Nunca deja el contador en negativo.
+    async releaseSeats(id, quantity) {
+        return EventModel.findOneAndUpdate(
+            { _id: id, reservedSeats: { $gte: quantity } },
+            { $inc: { reservedSeats: -quantity } },
+            { new: true }
+        ).lean();
+    }
 }
 
 export default new EventsDao();
