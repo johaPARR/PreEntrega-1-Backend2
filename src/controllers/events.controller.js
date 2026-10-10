@@ -1,19 +1,23 @@
 import mongoose from 'mongoose';
 import eventsService from '../services/events.service.js';
+import { toEventDTO } from '../dtos/event.dto.js';
 
 // GET /api/events → Listado público con filtros y paginación
-export const getEvents = async (req, res) => {
+export const getEvents = async (req, res, next) => {
     try {
         const result = await eventsService.getEvents(req.query);
-        res.status(200).json({ status: 'success', ...result });
+        res.status(200).json({
+            status: 'success',
+            ...result,
+            data: (result.data ?? []).map(toEventDTO)
+        });
     } catch (error) {
-        const status = error.status || 500;
-        res.status(status).json({ status: 'error', message: error.message });
+        next(error);
     }
 };
 
 // GET /api/events/:id → Consulta pública de un evento por ID
-export const getEventById = async (req, res) => {
+export const getEventById = async (req, res, next) => {
     try {
         const { id } = req.params;
 
@@ -22,31 +26,29 @@ export const getEventById = async (req, res) => {
         }
 
         const event = await eventsService.getEventById(id);
-        res.status(200).json({ status: 'success', payload: event });
+        res.status(200).json({ status: 'success', payload: toEventDTO(event) });
     } catch (error) {
-        const status = error.status || 500;
-        res.status(status).json({ status: 'error', message: error.message });
+        next(error);
     }
 };
 
 // POST /api/events → Crear evento (organizer y admin)
 // El organizer sale SIEMPRE del token autenticado (req.user), NUNCA del body.
-export const createEvent = async (req, res) => {
+export const createEvent = async (req, res, next) => {
     try {
         const event = await eventsService.createEvent({
             ...req.body,
             organizer: req.user.id
         });
 
-        res.status(201).json({ status: 'success', payload: event });
+        res.status(201).json({ status: 'success', payload: toEventDTO(event) });
     } catch (error) {
-        const status = error.status || 500;
-        res.status(status).json({ status: 'error', message: error.message });
+        next(error);
     }
 };
 
 // PUT /api/events/:id → Modificar evento (dueño o admin)
-export const updateEvent = async (req, res) => {
+export const updateEvent = async (req, res, next) => {
     try {
         const { id } = req.params;
 
@@ -55,15 +57,14 @@ export const updateEvent = async (req, res) => {
         }
 
         const updated = await eventsService.updateEvent(id, req.user, req.body);
-        res.status(200).json({ status: 'success', payload: updated });
+        res.status(200).json({ status: 'success', payload: toEventDTO(updated) });
     } catch (error) {
-        const status = error.status || 500;
-        res.status(status).json({ status: 'error', message: error.message });
+        next(error);
     }
 };
 
 // PATCH /api/events/:id/status → Cambiar estado de evento (dueño o admin)
-export const changeEventStatus = async (req, res) => {
+export const changeEventStatus = async (req, res, next) => {
     try {
         const { id } = req.params;
         const { status: newStatus } = req.body;
@@ -73,9 +74,8 @@ export const changeEventStatus = async (req, res) => {
         }
 
         const updated = await eventsService.changeStatus(id, req.user, newStatus);
-        res.status(200).json({ status: 'success', payload: updated });
+        res.status(200).json({ status: 'success', payload: toEventDTO(updated) });
     } catch (error) {
-        const status = error.status || 500;
-        res.status(status).json({ status: 'error', message: error.message });
+        next(error);
     }
 };

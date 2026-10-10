@@ -5,6 +5,7 @@ import eventsRouter from './routes/events.router.js';
 import sessionsRouter from './routes/sessions.router.js';
 import usersRouter from './routes/users.router.js';
 import ticketsRouter from "./routes/tickets.router.js";
+import { notFoundHandler, errorHandler } from './middlewares/error.middleware.js';
 
 const app = express();
 
@@ -21,5 +22,9 @@ app.get('/api/health', (req, res) => {
 app.use('/api/events', eventsRouter);
 app.use('/api/sessions', sessionsRouter);
 app.use('/api/users', usersRouter);
+
+// Siempre al final: primero 404 para rutas inexistentes, después el manejador de errores
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 export default app;

@@ -1,13 +1,13 @@
 import { generateToken } from '../utils/jwt.js';
+import { toUserDTO } from '../dtos/user.dto.js';
 
 const COOKIE_MAX_AGE = 3600000;
 
 // req.user ya viene poblado por la estrategia 'register' de Passport
 export const register = (req, res) => {
-    const { _id, first_name, last_name, email, role } = req.user;
     res.status(201).json({
         status: 'success',
-        payload: { id: _id, first_name, last_name, email, role }
+        payload: toUserDTO(req.user)
     });
 };
 
@@ -30,8 +30,7 @@ export const login = (req, res) => {
 
 // req.user es el payload del JWT decodificado por la estrategia 'current'
 export const current = (req, res) => {
-    const { id, email, role } = req.user;
-    res.status(200).json({ status: 'success', payload: { id, email, role } });
+    res.status(200).json({ status: 'success', payload: toUserDTO(req.user) });
 };
 
 // Logout no pasa por Passport
