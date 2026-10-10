@@ -5,6 +5,9 @@ import { authenticate } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 
+// Crea un error con código HTTP para que lo resuelva el middleware centralizado
+const createError = (status, message) => Object.assign(new Error(message), { status });
+
 const authenticateRegister = (req, res, next) => {
     passport.authenticate('register', { session: false }, (err, user, info) => {
         if (err) return next(err);
@@ -12,7 +15,7 @@ const authenticateRegister = (req, res, next) => {
             const message = info?.message === 'Missing credentials'
                 ? 'Faltan campos obligatorios'
                 : (info?.message || 'No se pudo registrar el usuario');
-            return res.status(info?.status || 400).json({ status: 'error', message });
+            return next(createError(info?.status || 400, message));
         }
         req.user = user;
         next();
@@ -23,7 +26,7 @@ const authenticateLogin = (req, res, next) => {
     passport.authenticate('login', { session: false }, (err, user) => {
         if (err) return next(err);
         if (!user) {
-            return res.status(401).json({ status: 'error', message: 'Credenciales inválidas' });
+            return next(createError(401, 'Credenciales inválidas'));
         }
         req.user = user;
         next();

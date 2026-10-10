@@ -8,7 +8,12 @@ export class UsersService {
     // Devuelve todos los usuarios SIN el password
     async getUsers() {
         const users = await this.repository.getAll();
-        return users.map(({ password, ...safeUser }) => safeUser);
+        return users.map((user) => {
+            // Si es un documento de Mongoose se pasa a objeto plano antes de quitar el password
+            const plain = typeof user.toObject === 'function' ? user.toObject() : user;
+            const { password, ...safeUser } = plain;
+            return safeUser;
+        });
     }
 }
 
