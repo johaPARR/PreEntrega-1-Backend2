@@ -2,126 +2,230 @@
 
 # Plataforma de Eventos e Inscripciones
 
-API REST desarrollada con Node.js y Express para la gestión integral de eventos, venta/reserva de tickets e inscripciones con control de cupos, implementando una arquitectura profesional por capas (**Router → Controller → Service → Repository → DAO → Modelo**).
+API REST desarrollada con Node.js y Express para la gestión integral de eventos, reserva de tickets e inscripciones con control de cupos, autenticación, autorización y notificaciones por correo electrónico.
 
-Este repositorio corresponde a la **Pre-entrega 7 de Backend II (Coderhouse): Tickets, inscripciones y control de cupos**.
+El proyecto implementa una arquitectura por capas: **Router → Controller → Service → Repository → DAO → Modelo**, complementada con DTOs para controlar los datos expuestos por la API.
+
+Este repositorio corresponde a la **Pre-entrega 8 de Backend II (Coderhouse): Arquitectura con DAO, Repository y DTO**. Refactoriza las funcionalidades de sesiones, usuarios, eventos, tickets e inscripciones sin cambiar el comportamiento externo de los endpoints.
 
 ---
 
-## Características de la Pre-entrega 7
+## Características de la Pre-entrega 8
 
-- **Entidad `Ticket` (Modelo Mongoose)**:
-  - Relación limpia sin objetos embebidos: referencias `ObjectId` a `user` (`ref: 'User'`) y `event` (`ref: 'Event'`).
-  - Control de estados estricto vía enum: `confirmed`, `pending`, `cancelled`.
-  - Campos de auditoría y trazabilidad: `quantity`, `reservationCode` único (alfanumérico `TCK-XXXXXXXX`), `createdAt` y `cancelledAt`.
-- **Lógica de negocio en la capa de servicios (`src/services/tickets.service.js`)**:
-  - Toda la validación reside en el servicio (el controlador solo recibe y delega).
-  - Verificación de existencia del evento y formato de ID.
-  - Validación de estado: solo eventos en estado `published` (se rechazan eventos `draft`, `cancelled` o `finished`/fecha pasada).
-  - Validación de cantidad: número entero positivo (`quantity > 0`).
-  - **Control estricto de cupos**: cálculo dinámico de lugares ocupados sumando la cantidad de tickets activos (`confirmed` y `pending`) mediante agregación en MongoDB. Los tickets `cancelled` no ocupan cupo. Si la cantidad solicitada supera los cupos disponibles, responde con error `409 Conflict` y mensaje claro indicando los lugares restantes.
-  - **Prevención de duplicados**: un usuario no puede registrar dos inscripciones activas simultáneas para el mismo evento. Si el usuario canceló una inscripción previa, el sistema le permite volver a inscribirse.
-- **Cancelación lógica y liberación inmediata de cupos**:
-  - Transición a `cancelled` y registro de fecha en `cancelledAt` sin borrado físico en base de datos.
-  - Al no computar los tickets cancelados en la agregación, el cupo queda liberado automáticamente para nuevos asistentes.
-  - Control de propiedad: únicamente el usuario dueño del ticket o un administrador (`admin`) pueden cancelarlo (403 Forbidden para terceros).
-- **Consulta de tickets propios (`/api/tickets/my-tickets`)**:
-  - Retorna las inscripciones del usuario autenticado.
-  - Aplica `populate` en el campo `event` trayendo únicamente datos seguros: `title`, `date` y `location`.
-  - No expone datos de otros usuarios ni información sensible.
-- **Consulta de inscriptos por evento (`/api/events/:eid/tickets`)**:
-  - Restringido únicamente al organizador dueño de dicho evento o a un `admin` (403 Forbidden para usuarios comunes o para otros organizadores).
-  - Aplica `populate` en `user` mostrando `first_name`, `last_name` y `email`.
-- **Notificaciones automáticas con Nodemailer**:
-  - Al confirmarse una inscripción exitosa, se envía un correo electrónico de confirmación con los datos del evento, cantidad de lugares y código de reserva.
-  - Manejo resiliente: si el servicio de correo experimenta fallas temporales, el ticket se registra correctamente garantizando la persistencia de la inscripción.
-  - Credenciales seguras: parametrizadas 100% en variables de entorno (`MAIL_HOST`, `MAIL_PORT`, `MAIL_USER`, `MAIL_PASS`, `MAIL_FROM`), sin ningún dato hardcodeado en el código fuente.
-- **Suite de tests automatizados (Jest + Supertest)**:
-  - **39 tests pasando al 100%** cubriendo autenticación, roles, eventos y el flujo completo de tickets (casos de éxito, control de cupos, duplicados, cancelaciones, populate y errores 400, 401, 403, 404, 409).
+### Entidad `Ticket`
+
+- Referencias `ObjectId` a `user` (`ref: 'User'`) y `event` (`ref: 'Event'`), sin almacenar documentos completos embebidos.
+- Control de estados mediante enum: `confirmed`, `pending` y `cancelled`.
+- Campos para la cantidad de lugares (`quantity`), código de reserva único (`reservationCode`), fecha de creación (`createdAt`) y fecha de cancelación (`cancelledAt`).
+
+### Arquitectura por capas
+
+- **DAO:** encapsula el acceso a los modelos de Mongoose y las operaciones de base de datos.
+- **Repository:** actúa como intermediario entre los servicios y los DAO.
+- **Services:** concentran las reglas de negocio y las validaciones.
+- **Controllers:** coordinan las solicitudes y respuestas HTTP sin importar modelos de Mongoose.
+- **DTOs:** controlan la información que se devuelve al cliente y evitan exponer contraseñas, incluso cuando se utiliza `populate`.
+
+### Lógica de negocio de tickets
+
+La lógica de negocio reside en `src/services/tickets.service.js` e incluye:
+
+- Validación del formato de los identificadores y existencia de los recursos.
+- Validación del estado del evento y de su fecha.
+- Validación de la cantidad de lugares solicitados.
+- Control atómico de cupos mediante `findOneAndUpdate` y el contador `reservedSeats`.
+- Prevención de inscripciones duplicadas activas.
+- Control de propiedad del ticket y permisos de administración.
+- Cancelación lógica de inscripciones y liberación de cupos.
+- Envío de notificaciones por correo electrónico.
+
+**Control de cupos atómico:** el evento guarda un contador `reservedSeats` que se incrementa con una única operación de MongoDB (`findOneAndUpdate`) solo si hay lugar, evitando la sobreventa con pedidos simultáneos. Si no hay cupo suficiente responde `409 Conflict` con los lugares restantes.
+
+### Cancelación lógica y liberación de cupos
+
+- El ticket cambia a estado `cancelled` y registra la fecha en `cancelledAt`, sin eliminarse físicamente de la base de datos.
+- Al cancelar se libera el cupo (`reservedSeats`) y se envía un email de cancelación al usuario dueño del ticket.
+- Únicamente el dueño del ticket o un administrador pueden cancelarlo.
+
+### Consulta de tickets propios
+
+Endpoint: `GET /api/tickets/my-tickets`.
+
+- Devuelve las inscripciones del usuario autenticado.
+- Utiliza `populate` en el evento para mostrar únicamente los datos necesarios, como `title`, `date` y `location`.
+- No expone contraseñas ni información sensible.
+
+### Consulta de inscriptos por evento
+
+Endpoint: `GET /api/events/:eid/tickets`.
+
+- Permite el acceso al organizador propietario del evento o a un administrador.
+- Utiliza `populate` del usuario para mostrar `first_name`, `last_name` y `email`.
+- No expone el campo `password` en la respuesta.
+
+### DTOs (Data Transfer Objects)
+
+- `user.dto.js`: transforma los datos del usuario y excluye el campo `password`.
+- `event.dto.js`: define la representación del evento que recibe el cliente.
+- `ticket.dto.js`: controla la estructura de la respuesta del ticket y filtra datos sensibles de los documentos relacionados mediante `populate`.
+
+### Manejo centralizado de errores
+
+El middleware `src/middlewares/error.middleware.js` centraliza el tratamiento de errores y mantiene un formato consistente para las respuestas.
+
+Se contemplan los siguientes códigos HTTP:
+
+- `400 Bad Request`: datos o solicitudes inválidos.
+- `401 Unauthorized`: falta autenticación válida.
+- `403 Forbidden`: permisos insuficientes.
+- `404 Not Found`: recurso inexistente.
+- `409 Conflict`: conflicto de negocio, como cupos insuficientes o inscripción duplicada.
+- `500 Internal Server Error`: error interno inesperado.
+
+### Notificaciones automáticas con Nodemailer
+
+- Envío de correo de confirmación al registrarse una inscripción.
+- Envío de correo de cancelación al dueño del ticket cuando se cancela su inscripción.
+- Si falla el servicio de correo durante la confirmación, la inscripción permanece registrada.
+- Las credenciales del servicio de correo se configuran mediante variables de entorno.
+
+### Suite de tests automatizados
+
+El proyecto cuenta con **42 tests automatizados** con Jest y Supertest que cubren autenticación, roles, eventos, tickets, control de cupos, cancelaciones, notificaciones y respuestas HTTP.
 
 ---
 
 ## Tecnologías
 
-- **Node.js** (v18+)
+- **Node.js** (v18 o superior)
 - **Express** (v4)
-- **Mongoose** (MongoDB ODM)
-- **Nodemailer** (servicio de notificaciones por email)
-- **Passport.js** (`passport-local`, `passport-jwt`)
+- **Mongoose** (ODM para MongoDB)
+- **Nodemailer** (notificaciones por correo electrónico)
+- **Passport.js** (`passport-local` y `passport-jwt`)
 - **JSON Web Token** (`jsonwebtoken`)
-- **Bcrypt** (hashing de contraseñas)
-- **Cookie-parser** (manejo de cookies `HttpOnly`)
-- **Dotenv** (gestión de variables de entorno)
-- **Jest** y **Supertest** (tests automatizados de integración y servicios)
-- **Cross-env** (compatibilidad multiplataforma en scripts de testing)
+- **Bcrypt** (hash de contraseñas)
+- **Cookie-parser** (manejo de cookies)
+- **Dotenv** (variables de entorno)
+- **Jest** y **Supertest** (pruebas automatizadas)
+- **Cross-env** (compatibilidad multiplataforma para scripts)
 - **Nodemon** (entorno de desarrollo)
 
 ---
 
 ## Arquitectura del proyecto
 
-El proyecto implementa una arquitectura desacoplada por capas:
+La API implementa una arquitectura por capas que separa las responsabilidades y facilita el mantenimiento, las pruebas y la evolución del sistema.
 
-```
+El flujo general de una petición es:
+
+```text
 Petición HTTP
-      │
-      ▼
-┌──────────────┐
-│    Router    │ ── Rutas y middlewares (authenticate, authorize).
-└──────────────┘
-      │
-      ▼
-┌──────────────┐
-│  Controller  │ ── Parsea params, query, body y formatea respuesta HTTP.
-└──────────────┘
-      │
-      ▼
-┌──────────────┐
-│   Service    │ ── Reglas de negocio puras, validación de cupos, permisos y mailer.
-└──────────────┘
-      │
-      ▼
-┌──────────────┐
-│  Repository  │ ── Abstracción de acceso a datos para desacoplar el dominio.
-└──────────────┘
-      │
-      ▼
-┌──────────────┐
-│     DAO      │ ── Data Access Object: consultas y agregaciones en MongoDB.
-└──────────────┘
-      │
-      ▼
-┌──────────────┐
-│ Modelo Mongo │ ── Esquemas Mongoose (User, Event, Ticket).
-└──────────────┘
+     │
+     ▼
+   Router
+     │
+     ▼
+ Controller
+     │
+     ▼
+   Service
+     │
+     ▼
+ Repository
+     │
+     ▼
+    DAO
+     │
+     ▼
+Modelo Mongoose → MongoDB
 ```
+
+Las respuestas que contienen datos de usuario, eventos o tickets se transforman mediante DTOs antes de enviarse al cliente.
+
+### Arquitectura en capas
+
+| Capa | Responsabilidad |
+|---|---|
+| **Router** | Define los endpoints y aplica los middlewares de autenticación y autorización. |
+| **Controller** | Extrae los datos de la petición, llama al servicio correspondiente y coordina la respuesta HTTP. |
+| **Service** | Concentra las reglas de negocio: validaciones, estados, cupos, duplicados, permisos sobre recursos propios y notificaciones. |
+| **Repository** | Actúa como intermediario entre los servicios y los DAO, exponiendo operaciones orientadas al dominio. |
+| **DAO (Data Access Object)** | Encapsula las consultas y operaciones de acceso a datos mediante Mongoose. |
+| **Modelo** | Define los esquemas, campos, referencias y restricciones de las entidades `User`, `Event` y `Ticket`. |
+| **DTO (Data Transfer Object)** | Controla los datos que se exponen en las respuestas de la API y evita filtrar información sensible. |
+| **Middleware de errores** | Centraliza el tratamiento de errores y mantiene respuestas HTTP consistentes. |
+
+### DTOs y protección de datos
+
+Los DTOs separan la estructura interna de los documentos de MongoDB de los datos que recibe el cliente.
+
+- `user.dto.js`: transforma los datos del usuario y excluye el campo `password`, incluido su hash.
+- `event.dto.js`: define los datos del evento que se exponen en la respuesta.
+- `ticket.dto.js`: controla la estructura de la respuesta del ticket y filtra los datos sensibles de los documentos relacionados mediante `populate`.
+
+### Manejo centralizado de errores
+
+El middleware `src/middlewares/error.middleware.js` centraliza el tratamiento de errores para mantener respuestas consistentes.
+
+| Código HTTP | Significado | Ejemplo |
+|---|---|---|
+| `400 Bad Request` | Solicitud o datos inválidos | Cantidad incorrecta o evento finalizado. |
+| `401 Unauthorized` | Falta autenticación válida | Acceso a una ruta protegida sin sesión. |
+| `403 Forbidden` | Permisos insuficientes | Intento de cancelar un ticket ajeno. |
+| `404 Not Found` | Recurso inexistente | Evento o ticket no encontrado. |
+| `409 Conflict` | Conflicto de negocio | Cupos insuficientes o inscripción duplicada. |
+| `500 Internal Server Error` | Error interno inesperado | Error interno no previsto por la aplicación. |
+
+Formato general de respuesta para errores:
+
+```json
+{
+  "status": "error",
+  "message": "Descripción del error"
+}
+```
+
+### Control atómico de cupos
+
+La reserva de lugares utiliza el contador `reservedSeats` del evento y una operación atómica de MongoDB mediante `findOneAndUpdate`, condicionada a la disponibilidad.
+
+- La reserva se realiza únicamente cuando existen lugares suficientes.
+- Las solicitudes simultáneas no pueden reservar los mismos lugares disponibles.
+- Si no hay cupo suficiente, la API responde `409 Conflict` e informa los lugares restantes.
+- Si falla la creación del ticket después de reservar el cupo, se intenta devolver la capacidad reservada.
+- Al cancelar un ticket, se liberan los lugares correspondientes y se envía un correo de cancelación al dueño del ticket.
 
 ### Estructura de carpetas
 
-```
+```text
 PreEntrega1-Backend2/
 ├── docs/
 │   └── capturas/                   # Evidencia de pruebas de endpoints
 ├── src/
 │   ├── config/
 │   │   ├── db.config.js            # Conexión a MongoDB Atlas
-│   │   └── passport.config.js      # Estrategias JWT y Local
+│   │   └── passport.config.js      # Estrategias de autenticación
 │   ├── controllers/
 │   │   ├── events.controller.js
 │   │   ├── sessions.controller.js
-│   │   ├── tickets.controller.js   # Controlador de inscripciones y tickets
+│   │   ├── tickets.controller.js
 │   │   └── users.controller.js
 │   ├── dao/
 │   │   ├── events.dao.js
-│   │   ├── tickets.dao.js          # Agregaciones de cupos y consultas Mongoose
+│   │   ├── tickets.dao.js
 │   │   └── users.dao.js
+│   ├── dtos/
+│   │   ├── event.dto.js
+│   │   ├── ticket.dto.js
+│   │   └── user.dto.js
 │   ├── middlewares/
-│   │   ├── auth.middleware.js      # authenticate (401 si no hay sesión)
-│   │   └── authorize.middleware.js # authorize(...roles) (403 si no tiene rol)
+│   │   ├── auth.middleware.js
+│   │   ├── authorize.middleware.js
+│   │   └── error.middleware.js
 │   ├── models/
-│   │   ├── Event.js                # Modelo de Evento
-│   │   ├── Ticket.js               # Modelo de Ticket/Inscripción
-│   │   └── User.js                 # Modelo de Usuario
+│   │   ├── Event.js
+│   │   ├── Ticket.js
+│   │   └── User.js
 │   ├── repositories/
 │   │   ├── events.repository.js
 │   │   ├── tickets.repository.js
@@ -129,25 +233,25 @@ PreEntrega1-Backend2/
 │   ├── routes/
 │   │   ├── events.router.js
 │   │   ├── sessions.router.js
-│   │   ├── tickets.router.js       # Endpoints de tickets e inscripciones
+│   │   ├── tickets.router.js
 │   │   └── users.router.js
 │   ├── services/
-│   │   ├── events.service.js       # Reglas de negocio de eventos
+│   │   ├── events.service.js
 │   │   ├── sessions.service.js
-│   │   ├── tickets.service.js      # Validación de cupos, duplicados y cancelación
+│   │   ├── tickets.service.js
 │   │   └── users.service.js
 │   ├── utils/
-│   │   ├── hash.js                 # Hashing de passwords con bcrypt
-│   │   ├── jwt.js                  # Generación y validación de tokens
-│   │   └── mailer.js               # Transporte Nodemailer para confirmaciones
-│   ├── app.js                      # Configuración de Express y middlewares
-│   └── server.js                   # Arranque del servidor HTTP
+│   │   ├── hash.js
+│   │   ├── jwt.js
+│   │   └── mailer.js
+│   ├── app.js
+│   └── server.js
 ├── tests/
-│   ├── auth.test.js                # Tests de autenticación y roles (Pre-entrega 5)
-│   ├── events.test.js              # Tests de negocio de eventos (Pre-entrega 6)
-│   └── tickets.test.js             # Tests de inscripciones, cupos y tickets (Pre-entrega 7)
-├── .env.example                    # Plantilla de variables de entorno (con MAIL_*)
-├── .gitignore                      # Exclusión de node_modules y .env
+│   ├── auth.test.js
+│   ├── events.test.js
+│   └── tickets.test.js
+├── .env.example
+├── .gitignore
 ├── package.json
 └── README.md
 ```
@@ -156,125 +260,139 @@ PreEntrega1-Backend2/
 
 ## Modelo `Ticket` (`src/models/Ticket.js`)
 
-Esquema de Mongoose para la colección `tickets`:
+Esquema de Mongoose para la colección `tickets`.
 
-| Campo | Tipo | Requerido | Valor por defecto | Reglas y Restricciones |
-|---|---|:---:|:---:|---|
-| `user` | `ObjectId` | Sí | - | Referencia a `User` (`ref: 'User'`). Solo ID, sin objeto embebido. |
-| `event` | `ObjectId` | Sí | - | Referencia a `Event` (`ref: 'Event'`). Solo ID, sin objeto embebido. |
-| `status` | `String` | No | `'confirmed'` | Enum estricto: `['confirmed', 'pending', 'cancelled']`. |
-| `quantity` | `Number` | Sí | - | Cantidad de cupos reservados (`min: 1`, entero positivo). |
-| `reservationCode` | `String` | Sí | - | Código único autogenerado con formato `TCK-XXXXXXXX` (`unique: true`). |
-| `createdAt` | `Date` | No | `Date.now` | Fecha y hora en que se confirmó la inscripción. |
-| `cancelledAt` | `Date` | No | `null` | Fecha en que fue cancelado (permanece `null` si está activo). |
+| Campo | Tipo | Requerido | Valor por defecto | Reglas y restricciones |
+|---|---|:---:|---|---|
+| `user` | `ObjectId` | Sí | — | Referencia a `User` (`ref: 'User'`). |
+| `event` | `ObjectId` | Sí | — | Referencia a `Event` (`ref: 'Event'`). |
+| `status` | `String` | No | `confirmed` | Enum: `confirmed`, `pending`, `cancelled`. |
+| `quantity` | `Number` | Sí | — | Cantidad de cupos reservados; debe ser un entero positivo. |
+| `reservationCode` | `String` | Sí | — | Código de reserva único, con formato `TCK-XXXXXXXX`. |
+| `createdAt` | `Date` | No | `Date.now` | Fecha de creación de la inscripción. |
+| `cancelledAt` | `Date` | No | `null` | Fecha de cancelación; permanece en `null` mientras el ticket no esté cancelado. |
 
-### Índices optimizados
-- `{ event: 1, status: 1 }`: acelera el cálculo de agregación de cupos y búsqueda de inscritos.
-- `{ user: 1 }`: optimiza la consulta de "mis tickets".
+### Índices
 
----
-
-## Reglas de Negocio de Tickets (`src/services/tickets.service.js`)
-
-Toda la lógica de control de negocio se ejecuta en la capa de servicios:
-
-### 1. Flujo de Inscripción (`createTicket`)
-Cuando un usuario autenticado intenta inscribirse en `POST /api/events/:eid/tickets`:
-1. **Existencia del Evento**: valida que el `eid` sea un `ObjectId` válido y que exista en base de datos (responde `404 Not Found` si no existe).
-2. **Estado del Evento**:
-   - Si `event.status === 'cancelled'` → responde `400 Bad Request` ("El evento está cancelado").
-   - Si `event.status === 'finished'` o la fecha del evento ya pasó → responde `400 Bad Request` ("El evento ya finalizó").
-   - Si `event.status !== 'published'` (por ejemplo, `'draft'`) → responde `400 Bad Request` ("El evento no está publicado").
-3. **Validación de Cantidad**: `quantity` debe ser un entero positivo mayor a 0 (de lo contrario responde `400 Bad Request`).
-4. **Control y Cálculo de Cupos**:
-   - Se calcula la cantidad de lugares ya ocupados mediante agregación en MongoDB:
-     `cuposOcupados = sum(quantity de tickets con status 'confirmed' o 'pending')`
-   - Los tickets con status `'cancelled'` **NO** se suman.
-   - Si `quantity > (event.capacity - cuposOcupados)`: se cancela la operación y responde `409 Conflict` con el mensaje:
-     `"No hay cupos suficientes. Lugares disponibles: X"`
-5. **Prevención de Inscripciones Duplicadas**:
-   - Se verifica si el usuario autenticado ya posee un ticket activo (`confirmed` o `pending`) para ese mismo evento.
-   - Si existe, responde `409 Conflict`: `"Ya tenés una inscripción activa para este evento"`.
-   - Si el usuario tenía un ticket anterior pero fue cancelado, la validación lo permite normalmente.
-6. **Persistencia**: se crea el ticket guardando únicamente las referencias (`user: user.id`, `event: eventId`), status `'confirmed'` y un `reservationCode` único.
-7. **Notificación por Correo**: se invoca a `sendTicketConfirmation` mediante Nodemailer enviando el detalle de la reserva al email del usuario. Si el servidor SMTP falla, la inscripción no se revierte y retorna `201 Created` exitosamente.
+- `{ event: 1, status: 1 }`: facilita las consultas de tickets por evento y estado.
+- `{ user: 1 }`: facilita la consulta de tickets de un usuario.
 
 ---
 
-### 2. Cancelación Lógica y Liberación de Cupos (`cancelTicket`)
-Cuando se invoca `PATCH /api/tickets/:tid/cancel`:
-1. **Validación del Ticket**: si el ID no existe o no tiene formato válido, responde `404 Not Found`.
-2. **Control de Propiedad**: se verifica que el solicitante sea el dueño del ticket (`String(ticket.user) === String(user.id)`) o tenga rol `admin`. Si un usuario común intenta cancelar el ticket de otra persona, responde `403 Forbidden` ("No podés cancelar un ticket que no es tuyo").
-3. **Estado Previo**: si el ticket ya se encuentra en `'cancelled'`, responde `400 Bad Request` ("El ticket ya está cancelado").
-4. **Baja Lógica**: se actualiza el ticket con `status: 'cancelled'` y `cancelledAt: new Date()`. **En ningún caso se elimina físicamente de la base de datos**.
-5. **Liberación de Cupo**: al quedar con status `cancelled`, la siguiente consulta de cupos disponibles ya no computa este ticket, liberando inmediatamente los lugares para nuevos usuarios.
+## Reglas de negocio de tickets (`src/services/tickets.service.js`)
+
+Toda la lógica de negocio relacionada con las inscripciones se concentra en la capa de servicios.
+
+### 1. Flujo de inscripción (`createTicket`)
+
+Endpoint: `POST /api/events/:eid/tickets`.
+
+1. **Existencia del evento:** valida el formato del identificador y comprueba que el evento exista. Si no existe, responde `404 Not Found`.
+
+2. **Estado del evento:**
+   - Si el evento está `cancelled`, responde `400 Bad Request`.
+   - Si el evento está `finished` o su fecha ya pasó, responde `400 Bad Request`.
+   - Si el evento no está `published`, responde `400 Bad Request`.
+
+3. **Validación de cantidad:** `quantity` debe ser un entero positivo mayor que cero. Si no cumple la condición, responde `400 Bad Request`.
+
+4. **Reserva atómica de cupo:** se intenta reservar los lugares con una sola operación (`reserveSeats`). Si no alcanzan, responde `409 Conflict` ("No hay cupos suficientes. Lugares disponibles: X"). Si falla la creación del ticket, el cupo reservado se devuelve.
+
+5. **Prevención de inscripciones duplicadas:**
+   - Se verifica si el usuario ya posee una inscripción activa para el mismo evento.
+   - Si existe una inscripción activa, responde `409 Conflict`.
+   - Si el ticket anterior fue cancelado, se permite una nueva inscripción.
+
+6. **Persistencia:** se crea el ticket con las referencias al usuario y al evento, su estado y el código de reserva.
+
+7. **Notificación por correo:** se intenta enviar el correo de confirmación mediante Nodemailer. Si el servicio SMTP falla, la inscripción permanece registrada.
+
+### 2. Cancelación lógica y liberación de cupos (`cancelTicket`)
+
+Endpoint: `PATCH /api/tickets/:tid/cancel`.
+
+1. **Validación del ticket:** comprueba que el ticket exista y que su identificador sea válido.
+
+2. **Control de propiedad:** el solicitante debe ser el dueño del ticket o tener rol `admin`. Si un usuario intenta cancelar el ticket de otra persona sin permisos, responde `403 Forbidden`.
+
+3. **Estado previo:** si el ticket ya está cancelado, responde `400 Bad Request`.
+
+4. **Baja lógica:** actualiza el ticket con `status: 'cancelled'` y registra la fecha en `cancelledAt`, sin eliminar el documento de la base de datos.
+
+5. **Liberación de cupo:** se descuentan los lugares del ticket de `reservedSeats` y se envía el email de cancelación (si cancela el dueño).
+
+### 3. Consulta de mis tickets (`getMyTickets`)
+
+Endpoint: `GET /api/tickets/my-tickets`.
+
+- Devuelve únicamente los tickets del usuario autenticado.
+- Aplica `populate` sobre el evento para mostrar los campos necesarios: `title`, `date` y `location`.
+- La respuesta pasa por el DTO del ticket para controlar los datos expuestos.
+
+### 4. Consulta de inscriptos por evento (`getEventTickets`)
+
+Endpoint: `GET /api/events/:eid/tickets`.
+
+- **Permisos:** permite el acceso al organizador propietario del evento o a un administrador.
+- **Verificación de pertenencia:** si el solicitante es un organizador, se comprueba que sea el creador del evento.
+- **Administradores:** pueden consultar los tickets de cualquier evento.
+- **Populate:** incluye los campos necesarios del usuario, como `first_name`, `last_name` y `email`, sin exponer su contraseña.
 
 ---
 
-### 3. Consulta de Mis Tickets (`getMyTickets`)
-Endpoint `GET /api/tickets/my-tickets`:
-- Solo responde con los tickets del usuario autenticado (`user.id`).
-- Aplica `populate('event', 'title date location')` para mostrar datos del evento sin exponer información innecesaria.
-- No expone datos de otros usuarios ni del organizador.
+## Matriz de endpoints
 
----
+### Sesiones y usuarios
 
-### 4. Consulta de Inscriptos por Evento (`getEventTickets`)
-Endpoint `GET /api/events/:eid/tickets`:
-- **Permisos requeridos**: rol `organizer` o `admin`.
-- **Verificación de pertenencia**: si el rol es `organizer`, el sistema valida que sea el creador del evento (`event.organizer === user.id`). Si intenta ver inscriptos de un evento de otro organizador, responde `403 Forbidden` ("Solo podés ver los tickets de tus propios eventos").
-- Si el rol es `admin`, tiene acceso a ver los tickets de cualquier evento.
-- Aplica `populate('user', 'first_name last_name email')` para que el organizador pueda gestionar la lista de asistentes.
-
----
-
-## Matriz Completa de Endpoints
-
-### Sesiones y Usuarios
 | Método | Endpoint | Acceso | Descripción |
 |---|---|---|---|
-| `POST` | `/api/sessions/register` | Público | Registro de usuario (asigna rol `user` por defecto). |
-| `POST` | `/api/sessions/login` | Público | Inicio de sesión, devuelve cookie `currentUser` con JWT. |
-| `GET` | `/api/sessions/current` | Autenticado | Datos del usuario autenticado. |
-| `POST` | `/api/sessions/logout` | Público | Cierre de sesión, limpia la cookie. |
-| `GET` | `/api/users` | Admin | Listado de todos los usuarios registrados. |
+| `POST` | `/api/sessions/register` | Público | Registro de usuario. |
+| `POST` | `/api/sessions/login` | Público | Inicio de sesión y autenticación mediante cookie JWT. |
+| `GET` | `/api/sessions/current` | Autenticado | Datos del usuario autenticado, sin contraseña. |
+| `POST` | `/api/sessions/logout` | Público | Cierre de sesión y limpieza de la cookie. |
+| `GET` | `/api/users` | Admin | Listado de usuarios registrados. |
 
 ### Eventos
-| Método | Endpoint | Acceso | Descripción |
-|---|---|---|---|
-| `GET` | `/api/events` | Público | Listado público con filtros (`status`, `category`, `location`, `dateFrom`, `dateTo`), paginación y ordenamiento. |
-| `GET` | `/api/events/:id` | Público | Detalle de evento con populate de organizador (`first_name`, `last_name`, `email`). |
-| `POST` | `/api/events` | Organizer / Admin | Crear evento (403 para usuarios `user`). |
-| `PUT` | `/api/events/:id` | Dueño / Admin | Modificar evento propio (403 para eventos ajenos). |
-| `PATCH` | `/api/events/:id/status` | Dueño / Admin | Cambiar estado (`draft`, `published`, `cancelled`, `finished`). |
 
-### Tickets e Inscripciones (Pre-entrega 7)
 | Método | Endpoint | Acceso | Descripción |
 |---|---|---|---|
-| `POST` | `/api/events/:eid/tickets` | Autenticado (`user`, `organizer`, `admin`) | Inscribirse a un evento publicado con control de cupos y envío de email. |
-| `GET` | `/api/tickets/my-tickets` | Autenticado | Ver mis propios tickets con populate (`title`, `date`, `location`). |
-| `GET` | `/api/events/:eid/tickets` | Organizer dueño / Admin | Ver todos los tickets e inscriptos del evento. |
-| `PATCH` | `/api/tickets/:tid/cancel` | Dueño del ticket / Admin | Cancelación lógica de ticket y liberación de cupo. |
+| `GET` | `/api/events` | Público | Listado de eventos con filtros, paginación y ordenamiento. |
+| `GET` | `/api/events/:id` | Público | Detalle de un evento. |
+| `POST` | `/api/events` | Organizer / Admin | Crear un evento. |
+| `PUT` | `/api/events/:id` | Dueño / Admin | Modificar un evento propio. |
+| `PATCH` | `/api/events/:id/status` | Dueño / Admin | Cambiar el estado de un evento. |
+
+El listado público de eventos admite filtros como `status`, `category`, `location`, `dateFrom` y `dateTo`, según los parámetros implementados en la API.
+
+### Tickets e inscripciones
+
+| Método | Endpoint | Acceso | Descripción |
+|---|---|---|---|
+| `POST` | `/api/events/:eid/tickets` | Autenticado | Inscripción a un evento con control de cupos y notificación por email. |
+| `GET` | `/api/tickets/my-tickets` | Autenticado | Consulta de los tickets propios. |
+| `GET` | `/api/events/:eid/tickets` | Organizer dueño / Admin | Consulta de tickets e inscriptos de un evento. |
+| `PATCH` | `/api/tickets/:tid/cancel` | Dueño del ticket / Admin | Cancelación lógica y liberación de cupos. |
 
 ---
 
-## Variables de Entorno
+## Variables de entorno
 
-Crear un archivo `.env` en la raíz del proyecto basado en `.env.example`:
+Crear un archivo `.env` en la raíz del proyecto, tomando como referencia `.env.example`.
+
+Ejemplo de configuración:
 
 ```env
-# Puerto del servidor
 PORT=8080
 NODE_ENV=development
 
-# Base de datos MongoDB Atlas
+# Base de datos MongoDB
 MONGO_URL=mongodb+srv://<usuario>:<password>@cluster0.mongodb.net/<dbname>?retryWrites=true&w=majority
 
 # Autenticación JWT
 JWT_SECRET=tu_secreto_super_seguro
 JWT_EXPIRES_IN=1h
 
-# Servicio de Correo (Nodemailer)
+# Servicio de correo
 MAIL_HOST=smtp.gmail.com
 MAIL_PORT=587
 MAIL_USER=tu_email@gmail.com
@@ -282,154 +400,190 @@ MAIL_PASS=tu_app_password
 MAIL_FROM="Plataforma de Eventos" <tu_email@gmail.com>
 ```
 
-> [!IMPORTANT]
-> Nunca subir el archivo `.env` al repositorio. Se encuentra correctamente ignorado en el archivo `.gitignore`. El archivo `.env.example` incluye todas las variables necesarias documentadas.
+**Importante:**
+
+- No subir el archivo `.env` al repositorio.
+- No publicar contraseñas, tokens ni credenciales reales.
+- Verificar que `.env` esté incluido en `.gitignore`.
+- Mantener `.env.example` sin secretos reales y con las variables que necesita el proyecto.
 
 ---
 
-## Instalación y Ejecución
+## Instalación y ejecución
+
+### 1. Clonar el repositorio
 
 ```bash
-# 1. Clonar el repositorio
 git clone https://github.com/johaPARR/PreEntrega-1-Backend2.git
 cd PreEntrega-1-Backend2
+```
 
-# 2. Instalar dependencias
+### 2. Instalar las dependencias
+
+```bash
 npm install
+```
 
-# 3. Iniciar en modo desarrollo con nodemon
+### 3. Configurar las variables de entorno
+
+Crear el archivo `.env` a partir de `.env.example` y completar los valores correspondientes.
+
+### 4. Iniciar en modo desarrollo
+
+```bash
 npm run dev
+```
 
-# 4. Iniciar en modo producción
+### 5. Iniciar en modo normal
+
+```bash
 npm start
 ```
 
----
-
-## Tests Automatizados (Jest + Supertest)
-
-El proyecto cuenta con una suite integral de **39 tests automatizados** ejecutados en memoria y mockeando servicios externos:
+### 6. Ejecutar las pruebas automatizadas
 
 ```bash
 npm test
 ```
 
-### Resumen de ejecución:
+---
 
-```bash
-> pre-entrega7-backend2@1.0.0 test
-> cross-env NODE_OPTIONS=--experimental-vm-modules jest --runInBand
+## Tests automatizados (Jest + Supertest)
 
-PASS tests/tickets.test.js (20 tests)
-  Tests Automatizados — Pre-entrega 7: Tickets, inscripciones y control de cupos
-    1. Inscripción (POST /api/events/:eid/tickets)
-      √ Inscripción exitosa responde 201 y envía el email de confirmación
-      √ Si falla el envío del email, la inscripción igual responde 201
-      √ Inscripción sin sesión responde 401
-      √ Inscripción a evento inexistente responde 404
-      √ Inscripción a evento cancelado responde 400
-      √ Inscripción a evento finalizado responde 400
-      √ Inscripción con quantity 0 responde 400
-      √ Inscripción sin cupo suficiente responde 409 con mensaje claro y no crea el ticket
-      √ Inscripción duplicada con ticket activo responde 409
-    2. Mis tickets (GET /api/tickets/my-tickets)
-      √ Responde 200 con los tickets del usuario y los datos del evento
-      √ Sin sesión responde 401
-    3. Tickets de un evento (GET /api/events/:eid/tickets)
-      √ Usuario con rol "user" recibe 403
-      √ Organizer de otro evento recibe 403
-      √ Organizer dueño del evento recibe 200
-      √ Admin recibe 200 aunque no sea el dueño
-    4. Cancelación (PATCH /api/tickets/:tid/cancel)
-      √ El dueño cancela su ticket: 200, status cancelled y cancelledAt registrado
-      √ Un user intentando cancelar un ticket ajeno recibe 403
-      √ Un admin puede cancelar el ticket de otro usuario
-      √ Cancelar un ticket ya cancelado responde 400
-      √ Cancelar un ticket inexistente responde 404
+El proyecto cuenta con una suite de **42 tests automatizados** para comprobar distintos comportamientos de la API.
 
-PASS tests/auth.test.js (9 tests)
-  Tests Automatizados — Pre-entrega 5: Roles y Autorización (401, 403, propiedad)
+### Cobertura general
 
-PASS tests/events.test.js (10 tests)
-  Pre-entrega 6: Entidad events y lógica de negocio (CRUD, fechas, filtros, estados)
+- Autenticación y autorización por roles.
+- Acceso a endpoints protegidos.
+- Creación, consulta y modificación de eventos.
+- Inscripción a eventos.
+- Validación de cantidad y disponibilidad de cupos.
+- Prevención de inscripciones duplicadas activas.
+- Cancelación de tickets y liberación de cupos.
+- Envío de notificaciones y manejo de fallas del correo.
+- Protección de datos sensibles mediante DTOs.
+- Respuestas HTTP para errores de negocio.
+
+### Resumen de ejecución
+
+Última ejecución registrada:
+
+```text
+PASS tests/tickets.test.js
+PASS tests/auth.test.js
+PASS tests/events.test.js
 
 Test Suites: 3 passed, 3 total
-Tests:       39 passed, 39 total
+Tests: 42 passed, 42 total
 ```
+
+Para volver a ejecutar las pruebas:
+
+```bash
+npm test
+```
+
+---
+
+## Casos de Prueba Requeridos (Checklist de Pre-entrega 8)
+
+| # | Caso de prueba | Resultado esperado |
+|:---:|---|---|
+| 1 | Flujo completo: registro → login → crear evento → inscribirse → consultar mis tickets → cancelar | Los pasos responden con los códigos esperados: `201`, `200`, `201`, `201`, `200`, `200`. |
+| 2 | `GET /api/sessions/current` | `200 OK`, sin el campo `password` en la respuesta. |
+| 3 | `GET /api/events/:eid/tickets` con `populate` | `200 OK`, sin el campo `password` del usuario en cada ticket. |
+| 4 | Error de negocio: inscripción sin cupo o evento inexistente | `409 Conflict` o `404 Not Found`, con formato `{ status: 'error', message }`, nunca `500` para estos casos. |
+| 5 | Ruta protegida sin sesión y con sesión sin permisos | `401 Unauthorized` sin sesión y `403 Forbidden` con sesión autenticada sin permisos. |
+
+Estos casos deben comprobarse antes de entregar el proyecto. Las pruebas automatizadas son complementarias a la verificación manual de los endpoints.
 
 ---
 
 ## Casos de Prueba Requeridos (Checklist de Pre-entrega 7)
 
-A continuación se detalla la matriz de casos de prueba solicitados por la consigna para validar mediante Thunder Client / Postman:
+La siguiente matriz conserva los casos de prueba de la etapa anterior para comprobar el flujo de inscripciones y los permisos.
 
-| # | Caso de Prueba | Endpoint / Método | Headers / Body | Resultado Esperado |
-|:---:|---|---|---|:---:|
-| 1 | **Inscripción exitosa** | `POST /api/events/:eid/tickets` | Cookie sesión `user`, `{ quantity: 2 }` | **201 Created** + email enviado con datos de reserva |
-| 2 | **Inscripción sin sesión** | `POST /api/events/:eid/tickets` | Sin cookie de sesión | **401 Unauthorized** |
-| 3 | **Inscripción a evento inexistente** | `POST /api/events/66901234567890abcdef9999/tickets` | Cookie sesión `user`, `{ quantity: 1 }` | **404 Not Found** ("Evento no encontrado") |
-| 4 | **Inscripción a evento cancelado o finalizado** | `POST /api/events/:eid_cancelado/tickets` | Cookie sesión `user`, `{ quantity: 1 }` | **400 Bad Request** ("El evento está cancelado") |
-| 5 | **Inscripción sin cupo suficiente** | `POST /api/events/:eid/tickets` | Cookie sesión `user`, `{ quantity: 999 }` | **409 Conflict** ("No hay cupos suficientes...") |
-| 6 | **Inscripción duplicada activa** | `POST /api/events/:eid/tickets` | Misma sesión que ya tiene ticket activo | **409 Conflict** ("Ya tenés una inscripción activa...") |
-| 7 | **Consulta de mis tickets** | `GET /api/tickets/my-tickets` | Cookie sesión `user` | **200 OK** con lista de tickets y populate (`title`, `date`, `location`) |
-| 8 | **Consulta de tickets como rol `user`** | `GET /api/events/:eid/tickets` | Cookie sesión `user` | **403 Forbidden** ("No tenés permisos para realizar esta acción") |
-| 9 | **Consulta de tickets como organizer ajeno** | `GET /api/events/:eid/tickets` | Cookie de organizer que no creó ese evento | **403 Forbidden** ("Solo podés ver los tickets de tus propios eventos") |
-| 10 | **Consulta de tickets como organizer dueño** | `GET /api/events/:eid/tickets` | Cookie del organizer dueño del evento | **200 OK** con lista de inscriptos y populate de usuarios |
-| 11 | **Cancelación de ticket ajeno como `user`** | `PATCH /api/tickets/:tid_ajeno/cancel` | Cookie sesión `user` distinta del dueño | **403 Forbidden** ("No podés cancelar un ticket que no es tuyo") |
-| 12 | **Cancelación propia de ticket** | `PATCH /api/tickets/:tid_propio/cancel` | Cookie del usuario dueño | **200 OK** (`status: 'cancelled'`, `cancelledAt` registrado) |
-| 13 | **Verificación de cupo liberado** | `POST /api/events/:eid/tickets` | Nueva inscripción ocupando el cupo liberado | **201 Created** (el cupo se liberó automáticamente) |
-| 14 | **Email de confirmación recibido** | Bandeja de entrada / Nodemailer | Inspección del correo recibido | Correo con asunto, lugar, fecha y código `TCK-XXXXXXXX` |
+| # | Caso de prueba | Endpoint / método | Resultado esperado |
+|:---:|---|---|---|
+| 1 | Inscripción exitosa | `POST /api/events/:eid/tickets` | `201 Created` y ticket registrado. |
+| 2 | Inscripción sin sesión | `POST /api/events/:eid/tickets` | `401 Unauthorized`. |
+| 3 | Inscripción a evento inexistente | `POST /api/events/:eid/tickets` | `404 Not Found`. |
+| 4 | Inscripción a evento cancelado o finalizado | `POST /api/events/:eid/tickets` | `400 Bad Request`. |
+| 5 | Inscripción sin cupo suficiente | `POST /api/events/:eid/tickets` | `409 Conflict`. |
+| 6 | Inscripción duplicada activa | `POST /api/events/:eid/tickets` | `409 Conflict`. |
+| 7 | Consulta de mis tickets | `GET /api/tickets/my-tickets` | `200 OK` y tickets del usuario autenticado. |
+| 8 | Consulta de tickets como usuario común | `GET /api/events/:eid/tickets` | `403 Forbidden`. |
+| 9 | Consulta de tickets como organizador ajeno | `GET /api/events/:eid/tickets` | `403 Forbidden`. |
+| 10 | Consulta de tickets como organizador dueño | `GET /api/events/:eid/tickets` | `200 OK`. |
+| 11 | Cancelación de ticket ajeno como usuario común | `PATCH /api/tickets/:tid/cancel` | `403 Forbidden`. |
+| 12 | Cancelación del ticket propio | `PATCH /api/tickets/:tid/cancel` | `200 OK` y estado `cancelled`. |
+| 13 | Verificación de cupo liberado | Nueva inscripción tras una cancelación | La inscripción puede realizarse si hay disponibilidad. |
+| 14 | Notificación de confirmación | Correo enviado por Nodemailer | Verificar el mensaje de confirmación cuando el servicio de correo esté configurado. |
 
 ---
 
-## Evidencia de Pruebas (Capturas Thunder Client - Pre-entrega 7)
+## Evidencia de pruebas (capturas Thunder Client)
 
-Las capturas de pantalla que respaldan la ejecución exitosa de los casos de prueba solicitados se encuentran almacenadas en el directorio `docs/capturas/`:
+Las capturas de pantalla que respaldan las pruebas de endpoints se encuentran en el directorio `docs/capturas/`, siempre que los archivos estén incluidos en el repositorio.
 
 ### 1. Inscripción sin sesión (401 Unauthorized)
+
 ![Inscripción sin sesión 401](docs/capturas/01-inscripcion-sin-sesion-401.png)
 
 ---
 
 ### 2. Inscripción a evento inexistente (404 Not Found)
+
 ![Inscripción a evento inexistente 404](docs/capturas/02-inscripcion-evento-inexistente-404.png)
 
 ---
 
 ### 3. Inscripción sin cupo suficiente (409 Conflict)
+
 ![Inscripción sin cupo 409](docs/capturas/03-inscripcion-sin-cupo-409.png)
 
 ---
 
 ### 4. Inscripción exitosa con código de reserva (201 Created)
+
 ![Inscripción exitosa 201](docs/capturas/04-inscripcion-exitosa-201.png)
 
 ---
 
 ### 5. Inscripción duplicada activa rechazada (409 Conflict)
+
 ![Inscripción duplicada 409](docs/capturas/05-inscripcion-duplicada-409.png)
 
 ---
 
-### 6. Consulta de mis tickets con populate de evento (200 OK)
+### 6. Consulta de mis tickets con populate (200 OK)
+
 ![Mis tickets con populate 200](docs/capturas/06-mis-tickets-populate-200.png)
 
 ---
 
-### 7. Consulta de tickets de un evento como rol user común (403 Forbidden)
-![Consulta tickets como user 403](docs/capturas/07-user-consulta-tickets-evento-403.png)
+### 7. Consulta de tickets como usuario común (403 Forbidden)
+
+![Consulta de tickets como usuario común 403](docs/capturas/07-user-consulta-tickets-evento-403.png)
 
 ---
 
-### 8. Consulta de tickets de un evento como organizador dueño (200 OK)
-![Consulta tickets organizador dueño 200](docs/capturas/08-organizer-dueno-tickets-evento-200.png)
+### 8. Consulta de tickets como organizador dueño (200 OK)
+
+![Consulta de tickets como organizador dueño 200](docs/capturas/08-organizer-dueno-tickets-evento-200.png)
 
 ---
 
-### 9. Intento de cancelación de ticket ajeno como rol user (403 Forbidden)
+### 9. Intento de cancelación de ticket ajeno como usuario común (403 Forbidden)
+
 ![Cancelar ticket ajeno 403](docs/capturas/09-cancelar-ticket-ajeno-403.png)
 
 ---
 
-### 10. Cancelación propia de ticket y registro de cancelledAt (200 OK)
+### 10. Cancelación propia de ticket y registro de `cancelledAt` (200 OK)
+
 ![Cancelación propia 200](docs/capturas/10a-cancelacion-propia-200.png)
+
+---
+

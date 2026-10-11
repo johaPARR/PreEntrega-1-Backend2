@@ -1,7 +1,7 @@
 {
-  "name": "pre-entrega7-backend2",
+  "name": "pre-entrega8-backend2",
   "version": "1.0.0",
-  "description": "Plataforma de eventos e inscripciones - Pre-entrega 7: Tickets, inscripciones y control de cupos",
+  "description": "Plataforma de eventos e inscripciones - Pre-entrega 8: Arquitectura DAO, Repository y DTO",
   "type": "module",
   "main": "src/server.js",
   "scripts": {
