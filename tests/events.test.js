@@ -125,6 +125,14 @@ describe('Pre-entrega 6: Entidad events y lógica de negocio', () => {
     });
 
     describe('3. Consulta individual de evento (GET /api/events/:id)', () => {
+        test('Consultar evento con ID inválido responde 400', async () => {
+            const res = await request(app).get('/api/events/abc');
+
+            expect(res.status).toBe(400);
+            expect(res.body.status).toBe('error');
+            expect(res.body.message).toBe('ID de evento inválido');
+        });
+
         test('Consultar evento inexistente responde 404', async () => {
             const fakeId = '669099999999999999999999';
             const err = new Error('Evento no encontrado');

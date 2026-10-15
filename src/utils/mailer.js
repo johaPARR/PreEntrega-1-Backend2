@@ -18,7 +18,7 @@ export const sendTicketConfirmation = async ({ to, event, ticket }) => {
 
   const eventDate = new Date(event.date).toLocaleDateString("es-AR");
 
-  await transporter.sendMail({
+  const info = await transporter.sendMail({
     from: process.env.MAIL_FROM,
     to,
     subject: `Confirmación de inscripción: ${event.title}`,
@@ -32,13 +32,18 @@ export const sendTicketConfirmation = async ({ to, event, ticket }) => {
       `Código de reserva: ${ticket.reservationCode}`,
     ].join("\n"),
   });
+
+  const previewUrl = nodemailer.getTestMessageUrl(info);
+  if (previewUrl) {
+    console.log(`📧 Confirmación enviada (preview Ethereal): ${previewUrl}`);
+  }
 };
 export const sendTicketCancellation = async ({ to, event, ticket }) => {
   const transporter = createTransporter();
 
   const eventDate = new Date(event.date).toLocaleDateString("es-AR");
 
-  await transporter.sendMail({
+  const info = await transporter.sendMail({
     from: process.env.MAIL_FROM,
     to,
     subject: `Inscripción cancelada: ${event.title}`,
@@ -52,4 +57,9 @@ export const sendTicketCancellation = async ({ to, event, ticket }) => {
       `Código de reserva: ${ticket.reservationCode}`,
     ].join("\n"),
   });
+
+  const previewUrl = nodemailer.getTestMessageUrl(info);
+  if (previewUrl) {
+    console.log(`📧 Cancelación enviada (preview Ethereal): ${previewUrl}`);
+  }
 };

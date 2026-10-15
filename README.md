@@ -101,6 +101,7 @@ Se definen en el archivo `.env` (que **no** se sube al repositorio). El archivo 
 | `npm run dev` | Inicia el servidor con recarga automática (nodemon) |
 | `npm start` | Inicia el servidor en modo normal |
 | `npm test` | Ejecuta la suite de tests (Jest + Supertest) |
+| `npm run seed` | Pobla la base de datos con usuarios y eventos de prueba |
 
 ---
 
@@ -181,7 +182,6 @@ PreEntrega1-Backend2/
 │   │   └── Ticket.js                   # Modelo de ticket / inscripción
 │   │
 │   ├── middlewares/
-│   │   ├── .gitkeep                    # Archivo vacío para mantener la carpeta en Git
 │   │   ├── auth.middleware.js          # authenticate: valida la sesión (401)
 │   │   ├── authorize.middleware.js     # authorize(...roles): valida el rol (403)
 │   │   └── error.middleware.js         # 404 de rutas y manejador centralizado de errores
@@ -191,12 +191,16 @@ PreEntrega1-Backend2/
 │       ├── jwt.js                      # Generación del token JWT
 │       └── mailer.js                   # Emails de confirmación y cancelación (Nodemailer)
 │
+├── scripts/
+│   └── seed.js                         # Poblado automático de usuarios y eventos de prueba
+│
 ├── tests/
 │   ├── auth.test.js                    # Autenticación y roles
 │   ├── events.test.js                  # Eventos
 │   └── tickets.test.js                 # Tickets, cupos y emails
 │
 └── docs/
+    ├── postman_collection.json         # Colección de Postman con todos los endpoints y flujos
     └── capturas/                       # Evidencia de pruebas (Thunder Client)
         ├── 01-inscripcion-sin-sesion-401.png
         ├── 01-registro-usuario.png
@@ -234,6 +238,7 @@ PreEntrega1-Backend2/
         ├── 10a-cancelacion-propia-200.png
         ├── 11-Organizer-crea-evento-201.png
         ├── 12-Organizer-cancela-evento-200.png
+        ├── 13-email-confirmacion.png
         ├── login-admin.png
         ├── login-organizer.png
         └── login-user.png
@@ -263,14 +268,28 @@ Hay tres roles: `user` (por defecto), `organizer` y `admin`.
 
 ## Usuarios de prueba
 
-Como el registro público no permite elegir el rol, para probar los tres roles hay que crear los usuarios y cambiar el rol directamente en la base de datos:
+Para facilitar la corrección y las pruebas de los tres roles, se incluye un script que puebla automáticamente la base de datos con usuarios y eventos de prueba:
 
-1. Registrar tres usuarios con `POST /api/sessions/register` (por ejemplo `user@test.com`, `organizer@test.com` y `admin@test.com`, con la contraseña `123456`).
-2. Abrir la colección `users` en MongoDB Atlas (o en MongoDB Compass).
+```bash
+npm run seed
+```
+
+Esto crea los siguientes usuarios (todos con la contraseña `123456`):
+- **Admin:** `admin@test.com` (permisos administrativos totales, `GET /api/users`)
+- **Organizador:** `organizer@test.com` (creación de eventos y gestión de eventos propios)
+- **Usuario:** `user@test.com` (inscripciones, consulta de tickets y cancelación)
+
+Además, crea eventos de prueba (uno publicado con cupo para inscripciones y uno en borrador).
+
+### Alternativa manual
+Como el registro público no permite elegir el rol por seguridad, para crearlos a mano:
+
+1. Registrar los usuarios con `POST /api/sessions/register` (`user@test.com`, `organizer@test.com`, `admin@test.com` con `123456`).
+2. Abrir la colección `users` en MongoDB Atlas o Compass.
 3. Editar el campo `role` de `organizer@test.com` a `organizer` y el de `admin@test.com` a `admin`.
-4. Iniciar sesión con cada usuario. El rol viaja en el JWT, así que hay que volver a hacer login después de cambiarlo.
+4. Iniciar sesión con cada usuario (el rol viaja en el JWT).
 
-> El campo `role` está marcado como inmutable en el modelo: solo se puede cambiar directamente en la base de datos, no a través de la API.
+> El campo `role` está marcado como inmutable en el modelo: solo se puede cambiar directamente en la base de datos o mediante el script de seed, no a través del body de la API.
 
 ---
 
@@ -567,12 +586,12 @@ Todas las respuestas de error pasan por un middleware centralizado y tienen el m
 
 ## Tests automatizados
 
-La suite tiene **42 tests** (Jest + Supertest) repartidos en 3 archivos:
+La suite tiene **43 tests** (Jest + Supertest) repartidos en 3 archivos:
 
 | Archivo | Tests | Cubre |
 |---|:-:|---|
 | `tests/auth.test.js` | 9 | 401 sin sesión, 403 por rol, ruta de administrador y propiedad de eventos |
-| `tests/events.test.js` | 10 | Creación y validaciones, listado con filtros, consulta, modificación y cambios de estado |
+| `tests/events.test.js` | 11 | Creación y validaciones, listado con filtros, consulta por ID (válido e inválido), modificación y cambios de estado |
 | `tests/tickets.test.js` | 23 | Inscripción, cupos, duplicados, mis tickets, tickets de un evento, cancelación y emails |
 
 ```bash
@@ -585,6 +604,11 @@ Los tests usan mocks de la base de datos y del envío de emails, por lo que no n
 
 ## Casos de prueba y evidencia
 
+### Colección de Postman
+Se incluye la colección oficial con todos los endpoints, flujos y validaciones de error configurados:
+- **Archivo para importar:** [`docs/postman_collection.json`](docs/postman_collection.json)
+
+### Evidencia de pruebas manuales
 Pruebas manuales realizadas con Thunder Client. Las capturas están en `docs/capturas/`.
 
 ### Flujo de autenticación
@@ -625,6 +649,7 @@ Pruebas manuales realizadas con Thunder Client. Las capturas están en `docs/cap
 | Inscripción a un evento inexistente | `404` | ![Evento inexistente](docs/capturas/02-inscripcion-evento-inexistente-404.png) |
 | Inscripción sin cupo suficiente | `409` | ![Sin cupo](docs/capturas/03-inscripcion-sin-cupo-409.png) |
 | Inscripción exitosa con código de reserva | `201` | ![Inscripción exitosa](docs/capturas/04-inscripcion-exitosa-201.png) |
+| Email de confirmación recibido (Nodemailer) | `Email` | ![Email recibido](docs/capturas/13-email-confirmacion.png) |
 | Inscripción duplicada | `409` | ![Duplicada](docs/capturas/05-inscripcion-duplicada-409.png) |
 | Mis tickets con `populate`, sin password | `200` | ![Mis tickets](docs/capturas/06-mis-tickets-populate-200.png) |
 | `user` consulta los tickets de un evento | `403` | ![User consulta tickets](docs/capturas/07-user-consulta-tickets-evento-403.png) |

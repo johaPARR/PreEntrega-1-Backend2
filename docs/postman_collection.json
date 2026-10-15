@@ -1,0 +1,463 @@
+{
+  "info": {
+    "_postman_id": "b3e94510-82a1-4322-a58f-2831c2b5ec91",
+    "name": "Plataforma de Eventos API - Coderhouse",
+    "description": "Colección completa para la API Backend de Plataforma de Eventos (Entrega Final - Backend 2). Incluye autenticación con JWT en cookie httpOnly, gestión de eventos con filtros/paginación, tickets con control de cupos atómico y casos de validación.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "eventId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "ticketId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Health Check",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "health"]
+            },
+            "description": "Verifica que el servidor esté levantado y respondiendo."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "1. Sesiones y Autenticación",
+      "item": [
+        {
+          "name": "Registro - Usuario Estándar",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"Ana\",\n  \"last_name\": \"García\",\n  \"email\": \"ana@test.com\",\n  \"password\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/sessions/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sessions", "register"]
+            },
+            "description": "Registra un nuevo usuario. El rol siempre se asigna como 'user' en el backend."
+          },
+          "response": []
+        },
+        {
+          "name": "Login - Usuario (Setea Cookie currentUser)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ana@test.com\",\n  \"password\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/sessions/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sessions", "login"]
+            },
+            "description": "Inicia sesión y genera el JWT almacenado automáticamente en la cookie httpOnly 'currentUser'."
+          },
+          "response": []
+        },
+        {
+          "name": "Login - Organizador",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"organizer@test.com\",\n  \"password\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/sessions/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sessions", "login"]
+            },
+            "description": "Login con usuario con rol 'organizer' para crear y gestionar eventos."
+          },
+          "response": []
+        },
+        {
+          "name": "Login - Administrador",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@test.com\",\n  \"password\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/sessions/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sessions", "login"]
+            },
+            "description": "Login con usuario con rol 'admin' con permisos totales."
+          },
+          "response": []
+        },
+        {
+          "name": "Sesión Actual (GET /current)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/sessions/current",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sessions", "current"]
+            },
+            "description": "Devuelve la información del usuario autenticado mediante Passport JWT (sin exponer password)."
+          },
+          "response": []
+        },
+        {
+          "name": "Logout (Cerrar Sesión)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/sessions/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sessions", "logout"]
+            },
+            "description": "Limpia la cookie 'currentUser'."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Usuarios (Solo Admin)",
+      "item": [
+        {
+          "name": "Listar Usuarios (GET /api/users)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users"]
+            },
+            "description": "Ruta protegida para admin. Devuelve la lista de usuarios sin passwords."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Eventos",
+      "item": [
+        {
+          "name": "Listar Eventos (Público, Paginado)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/events?status=published&page=1&limit=10&sort=date",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "events"],
+              "query": [
+                { "key": "status", "value": "published", "description": "draft, published, cancelled, finished" },
+                { "key": "category", "value": "", "description": "Filtro por categoría", "disabled": true },
+                { "key": "location", "value": "", "description": "Filtro por ubicación", "disabled": true },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "10" },
+                { "key": "sort", "value": "date", "description": "date, -date" }
+              ]
+            },
+            "description": "Consulta el listado público con filtros, paginación y ordenamiento."
+          },
+          "response": []
+        },
+        {
+          "name": "Detalle de Evento por ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/events/{{eventId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "events", "{{eventId}}"]
+            },
+            "description": "Obtiene los detalles públicos de un evento por su MongoDB ObjectId."
+          },
+          "response": []
+        },
+        {
+          "name": "Crear Evento (Organizer o Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Congreso Tech 2027\",\n  \"description\": \"Charlas y talleres sobre desarrollo backend con Node.js y arquitecturas limpias\",\n  \"category\": \"congress\",\n  \"date\": \"2027-05-20T10:00:00.000Z\",\n  \"location\": \"Córdoba, Argentina\",\n  \"capacity\": 50,\n  \"price\": 1500,\n  \"status\": \"published\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/events",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "events"]
+            },
+            "description": "Crea un nuevo evento. El organizador se toma automáticamente del token autenticado."
+          },
+          "response": []
+        },
+        {
+          "name": "Modificar Evento (Dueño o Admin)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Congreso Tech 2027 - Edición Especial\",\n  \"capacity\": 60,\n  \"price\": 1800\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/events/{{eventId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "events", "{{eventId}}"]
+            },
+            "description": "Modifica un evento existente. Solo permitido para el organizador dueño o un administrador."
+          },
+          "response": []
+        },
+        {
+          "name": "Cambiar Estado de Evento (Dueño o Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"cancelled\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/events/{{eventId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "events", "{{eventId}}", "status"]
+            },
+            "description": "Cambia el estado del evento (draft, published, cancelled, finished)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. Tickets e Inscripciones",
+      "item": [
+        {
+          "name": "Inscribirse a Evento (POST Ticket)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 1\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/events/{{eventId}}/tickets",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "events", "{{eventId}}", "tickets"]
+            },
+            "description": "Inscribe al usuario autenticado. Reserva cupo de forma atómica y envía email con Nodemailer."
+          },
+          "response": []
+        },
+        {
+          "name": "Mis Tickets (GET /my-tickets)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/tickets/my-tickets",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tickets", "my-tickets"]
+            },
+            "description": "Lista las inscripciones del usuario autenticado con datos del evento poblados por populate."
+          },
+          "response": []
+        },
+        {
+          "name": "Ver Tickets de un Evento (Dueño o Admin)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/events/{{eventId}}/tickets",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "events", "{{eventId}}", "tickets"]
+            },
+            "description": "Lista todos los tickets vendidos de un evento. Solo organizador creador o administrador."
+          },
+          "response": []
+        },
+        {
+          "name": "Cancelar Ticket (PATCH /cancel)",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/tickets/{{ticketId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tickets", "{{ticketId}}", "cancel"]
+            },
+            "description": "Cancela la inscripción, libera el cupo automáticamente y envía email de cancelación."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5. Casos de Prueba y Validaciones (Códigos de Error)",
+      "item": [
+        {
+          "name": "Crear evento sin cookie (401)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Sin Sesion\",\n  \"date\": \"2027-10-10\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/events",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "events"]
+            },
+            "description": "Debe responder 401 No autenticado."
+          },
+          "response": []
+        },
+        {
+          "name": "User intenta crear evento (403)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Evento de User\",\n  \"date\": \"2027-10-10\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/events",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "events"]
+            },
+            "description": "Con sesión de rol 'user', debe responder 403 No tenés permisos."
+          },
+          "response": []
+        },
+        {
+          "name": "Crear evento con fecha pasada (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Evento Pasado\",\n  \"description\": \"Desc\",\n  \"category\": \"cat\",\n  \"date\": \"2020-01-01\",\n  \"location\": \"Lugar\",\n  \"capacity\": 10\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/events",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "events"]
+            },
+            "description": "Debe responder 400 por validación de fecha no pasada."
+          },
+          "response": []
+        },
+        {
+          "name": "Consultar evento con ID inválido (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/events/abc",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "events", "abc"]
+            },
+            "description": "Debe responder 400 'ID de evento inválido'."
+          },
+          "response": []
+        },
+        {
+          "name": "Consultar evento inexistente (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/events/669099999999999999999999",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "events", "669099999999999999999999"]
+            },
+            "description": "Debe responder 404 Evento no encontrado."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
