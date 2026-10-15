@@ -1,36 +1,50 @@
 import ticketsDao from "../dao/tickets.dao.js";
 
-class TicketsRepository {
+const ACTIVE_STATUSES = ["confirmed", "pending"];
+
+export class TicketsRepository {
+  constructor(dao) {
+    this.dao = dao;
+  }
+
   async createTicket(data) {
-    return ticketsDao.create(data);
+    return this.dao.create(data);
   }
 
   async getTicketById(id) {
-    return ticketsDao.getById(id);
+    return this.dao.getById(id);
   }
 
   async getTicketsByUser(userId) {
-    return ticketsDao.getByUser(userId);
+    return this.dao.getByUser(userId);
   }
 
   async getTicketsByEvent(eventId) {
-    return ticketsDao.getByEvent(eventId);
+    return this.dao.getByEvent(eventId);
   }
 
   async findActiveTicket(userId, eventId) {
-    return ticketsDao.getActiveByUserAndEvent(userId, eventId);
+    return this.dao.getByUserAndEventWithStatuses(
+      userId,
+      eventId,
+      ACTIVE_STATUSES
+    );
   }
 
   async getOccupiedSeats(eventId) {
-    return ticketsDao.countActiveQuantityByEvent(eventId);
+    return this.dao.sumQuantityByEventAndStatuses(eventId, ACTIVE_STATUSES);
   }
 
   async cancelTicket(id) {
-    return ticketsDao.updateById(id, {
+    return this.dao.updateById(id, {
       status: "cancelled",
       cancelledAt: new Date(),
     });
   }
+
+  isValidId(id) {
+    return this.dao.isValidId(id);
+  }
 }
 
-export default new TicketsRepository();
+export default new TicketsRepository(ticketsDao);

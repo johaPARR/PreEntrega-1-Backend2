@@ -1,5 +1,4 @@
 import crypto from "crypto";
-import mongoose from "mongoose";
 import ticketsRepository from "../repositories/tickets.repository.js";
 import eventsRepository from "../repositories/events.repository.js";
 import eventsService from "./events.service.js";
@@ -18,7 +17,7 @@ const generateReservationCode = () =>
   `TCK-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
 
 const getExistingEvent = async (eventId) => {
-  if (!mongoose.isValidObjectId(eventId)) {
+  if (!ticketsRepository.isValidId(eventId)) {
     throw createError(404, "Evento no encontrado");
   }
   const event = await eventsService.getEventById(eventId);
@@ -111,7 +110,7 @@ class TicketsService {
   }
 
   async cancelTicket(ticketId, user) {
-    if (!mongoose.isValidObjectId(ticketId)) {
+    if (!ticketsRepository.isValidId(ticketId)) {
       throw createError(404, "Ticket no encontrado");
     }
 
