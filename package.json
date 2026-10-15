@@ -1,7 +1,7 @@
 {
-  "name": "pre-entrega8-backend2",
+  "name": "plataforma-eventos-api",
   "version": "1.0.0",
-  "description": "Plataforma de eventos e inscripciones - Pre-entrega 8: Arquitectura DAO, Repository y DTO",
+  "description": "API REST de plataforma de eventos e inscripciones: autenticación con JWT y Passport, roles, eventos, tickets con control de cupos y notificaciones por email",
   "type": "module",
   "main": "src/server.js",
   "scripts": {

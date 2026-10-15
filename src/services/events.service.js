@@ -61,6 +61,10 @@ export class EventsService {
 
     // Consulta de evento individual por ID
     async getEventById(id) {
+        if (!this.repository.isValidId(id)) {
+            throw createError('ID de evento inválido', 400);
+        }
+
         const event = await this.repository.getById(id);
         if (!event) {
             throw createError('Evento no encontrado', 404);

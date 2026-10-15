@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { EventModel } from '../models/Event.js';
 
 export class EventsDao {
@@ -77,6 +78,11 @@ export class EventsDao {
             { $inc: { reservedSeats: -quantity } },
             { new: true }
         ).lean();
+    }
+
+    // Verifica que el id tenga formato de ObjectId válido
+    isValidId(id) {
+        return mongoose.isValidObjectId(id);
     }
 }
 

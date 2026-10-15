@@ -34,6 +34,10 @@ export class EventsRepository {
     releaseSeats(id, quantity) {
         return this.dao.releaseSeats(id, quantity);
     }
+
+    isValidId(id) {
+        return this.dao.isValidId(id);
+    }
 }
 
 export default new EventsRepository(eventsDao);
