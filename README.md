@@ -656,3 +656,20 @@ Pruebas manuales realizadas con Thunder Client. Las capturas están en `docs/cap
 | `organizer` dueño consulta los tickets | `200` | ![Organizer dueño](docs/capturas/08-organizer-dueno-tickets-evento-200.png) |
 | Cancelación de un ticket ajeno | `403` | ![Cancelar ajeno](docs/capturas/09-cancelar-ticket-ajeno-403.png) |
 | Cancelación propia, con `cancelledAt` | `200` | ![Cancelación propia](docs/capturas/10a-cancelacion-propia-200.png) |
+
+
+
+## DevOps
+
+![CI](https://github.com/johaPARR/PreEntrega-1-Backend2/actions/workflows/ci.yml/badge.svg)
+
+### Ejecutar con Docker
+1. Copiá `.env.example` a `.env` y completá los valores.
+2. Ejecutá: `docker compose up --build`
+3. La API queda en `http://localhost:8081`.
+
+### Integración continua
+En cada push a `main`, GitHub Actions instala dependencias, corre los tests con Jest y construye la imagen Docker.
+
+### Despliegue
+(link de Render, cuando lo tengas)
