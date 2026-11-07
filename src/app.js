@@ -1,4 +1,6 @@
+
 import express from 'express';
+import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import passport from './config/passport.config.js';
 import eventsRouter from './routes/events.router.js';
@@ -14,6 +16,17 @@ import {
 } from './config/metrics.js';
 
 const app = express();
+
+// CORS: solo se aceptan pedidos de las webs listadas en CORS_ORIGIN
+const allowedOrigins = (process.env.CORS_ORIGIN || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+app.use(cors({
+    origin: allowedOrigins.length ? allowedOrigins : false,
+    credentials: true
+}));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
