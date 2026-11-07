@@ -1,6 +1,21 @@
 node_modules/
+
+# Variables de entorno
 .env
+.env.*
+!.env.example
+
+# Terraform
 .terraform/
 *.tfstate
 *.tfstate.*
+*.tfvars
+*.tfvars.json
+
+# Credenciales y claves privadas
+kubeconfig
+*.pem
+*.key
+
+# Editor
 .vscode/

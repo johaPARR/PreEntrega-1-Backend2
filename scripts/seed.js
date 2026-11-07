@@ -1,3 +1,4 @@
+
 import 'dotenv/config';
 import mongoose from 'mongoose';
 import bcrypt from 'bcrypt';
@@ -9,18 +10,30 @@ const SALT_ROUNDS = 10;
 const seedDatabase = async () => {
     try {
         const mongoUrl = process.env.MONGO_URL;
-        if (!mongoUrl) {
-            console.error('❌ Error: La variable MONGO_URL no está configurada en el archivo .env');
-            process.exit(1);
+        const seedPassword = process.env.SEED_PASSWORD;
+        const nodeEnv = process.env.NODE_ENV;
+
+        if (nodeEnv === 'production') {
+            throw new Error('El seed está deshabilitado en producción.');
         }
 
-        console.log('⏳ Conectando a MongoDB Atlas...');
+        if (!mongoUrl) {
+            throw new Error('La variable MONGO_URL no está configurada.');
+        }
+
+        if (!seedPassword) {
+            throw new Error('La variable SEED_PASSWORD no está configurada.');
+        }
+
+        if (seedPassword.length < 12) {
+            throw new Error('SEED_PASSWORD debe tener al menos 12 caracteres.');
+        }
+
         await mongoose.connect(mongoUrl);
-        console.log('✅ Conexión establecida.');
+        console.log('Conexión a MongoDB establecida.');
 
-        const hashedPassword = await bcrypt.hash('123456', SALT_ROUNDS);
+        const hashedPassword = await bcrypt.hash(seedPassword, SALT_ROUNDS);
 
-        // 1. Usuarios de prueba
         const testUsers = [
             {
                 first_name: 'Admin',
@@ -45,21 +58,21 @@ const seedDatabase = async () => {
             }
         ];
 
-        console.log('\n👤 Creando / actualizando usuarios de prueba...');
         const userMap = {};
+
         for (const user of testUsers) {
             const existing = await UserModel.findOneAndUpdate(
                 { email: user.email },
                 { $set: user },
                 { upsert: true, new: true, setDefaultsOnInsert: true }
             );
+
             userMap[user.email] = existing;
-            console.log(`   - [${existing.role.toUpperCase()}] ${existing.email} (Contraseña: 123456)`);
+            console.log(`Usuario de prueba preparado: ${existing.email}`);
         }
 
         const organizerUser = userMap['organizer@test.com'];
 
-        // 2. Eventos de prueba
         const testEvents = [
             {
                 title: 'Congreso Tech 2027',
@@ -87,26 +100,26 @@ const seedDatabase = async () => {
             }
         ];
 
-        console.log('\n📅 Creando / actualizando eventos de prueba...');
         for (const evt of testEvents) {
             const existing = await EventModel.findOneAndUpdate(
                 { title: evt.title },
                 { $set: evt },
                 { upsert: true, new: true, setDefaultsOnInsert: true }
             );
-            console.log(`   - [${existing.status.toUpperCase()}] "${existing.title}" | Capacidad: ${existing.capacity} | ID: ${existing._id}`);
+
+            console.log(`Evento de prueba preparado: ${existing.title}`);
         }
 
-        console.log('\n🎉 ¡Base de datos poblada exitosamente!\n');
-        await mongoose.disconnect();
-        process.exit(0);
+        console.log('Base de datos poblada exitosamente.');
     } catch (error) {
-        console.error('❌ Error ejecutando seed:', error.message);
+        console.error('Error ejecutando seed:', error.message);
+        process.exitCode = 1;
+    } finally {
         if (mongoose.connection.readyState !== 0) {
             await mongoose.disconnect();
         }
-        process.exit(1);
     }
 };
 
 seedDatabase();
+
