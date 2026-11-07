@@ -28,6 +28,7 @@ El proyecto es la evolución de las pre-entregas del curso y está organizado en
 13. [Manejo de errores](#manejo-de-errores)
 14. [Tests automatizados](#tests-automatizados)
 15. [Casos de prueba y evidencia](#casos-de-prueba-y-evidencia)
+16. [DevOps](#devops)
 
 ---
 
@@ -45,6 +46,12 @@ El proyecto es la evolución de las pre-entregas del curso y está organizado en
 | dotenv | Variables de entorno |
 | Jest + Supertest | Tests automatizados |
 | nodemon, cross-env | Herramientas de desarrollo |
+| Docker + Docker Compose | Contenedores de la API, MongoDB, Prometheus y Grafana |
+| GitHub Actions | Integración continua: tests y build de la imagen Docker |
+| Render | Despliegue en la nube con Docker |
+| Prometheus + Grafana (`@prometheus-io/client`) | Métricas y dashboards de monitoreo |
+| Kubernetes (Kind) + kubectl | Orquestación local con 2 réplicas de la API |
+| Terraform | Infraestructura como código sobre el cluster de Kind |
 
 ---
 
@@ -130,17 +137,45 @@ PreEntrega1-Backend2/
 ├── node_modules/                       # Dependencias instaladas con npm install (no se sube al repo)
 ├── .env                                # Variables de entorno reales (local, no se sube al repo)
 ├── .env.example                        # Plantilla de variables de entorno
-├── .gitignore                          # Excluye node_modules y .env
+├── .gitignore                          # Excluye node_modules, .env y archivos locales de Terraform
+├── .dockerignore                       # Excluye .env, node_modules, tests y docs de la imagen Docker
+├── Dockerfile                          # Imagen de la API (node:22-bookworm-slim, usuario no root)
+├── docker-compose.yml                  # API + MongoDB + Prometheus + Grafana
 ├── package.json                        # Dependencias y scripts
 ├── package-lock.json                   # Versiones exactas de las dependencias
 ├── README.md
 │
+├── .github/
+│   └── workflows/
+│       └── ci.yml                      # GitHub Actions: tests con Jest + build de la imagen Docker
+│
+├── prometheus/
+│   └── prometheus.yml                  # Scrape de /metrics de la API cada 15 segundos
+│
+├── grafana/
+│   ├── provisioning/
+│   │   ├── datasources/
+│   │   │   └── prometheus.yml          # Datasource de Prometheus para Grafana
+│   │   └── dashboards/
+│   │       └── dashboards.yml          # Carga automática de los dashboards
+│   └── dashboards/                     # Dashboards de Grafana exportados (JSON)
+│
+├── k8s/
+│   └── api.yaml                        # Kubernetes (Kind): Deployment con 2 réplicas + Service
+│
+├── terraform/
+│   ├── main.tf                         # Provider kubernetes y recursos Deployment y Service
+│   ├── variables.tf                    # Variables: contexto de Kind, imagen, réplicas y puerto
+│   ├── outputs.tf                      # Nombres del Deployment y del Service creados
+│   └── .terraform.lock.hcl             # Versiones bloqueadas de los providers
+│
 ├── src/
-│   ├── app.js                          # Configuración de Express, rutas y manejo de errores
+│   ├── app.js                          # Configuración de Express, métricas, rutas y manejo de errores
 │   ├── server.js                       # Arranque: conexión a la base y servidor
 │   │
 │   ├── config/
 │   │   ├── db.config.js                # Conexión a MongoDB
+│   │   ├── metrics.js                  # Métricas de Prometheus (peticiones HTTP y duración)
 │   │   └── passport.config.js          # Estrategias de Passport: register, login y current
 │   │
 │   ├── routes/
@@ -663,13 +698,138 @@ Pruebas manuales realizadas con Thunder Client. Las capturas están en `docs/cap
 
 ![CI](https://github.com/johaPARR/PreEntrega-1-Backend2/actions/workflows/ci.yml/badge.svg)
 
-### Ejecutar con Docker
-1. Copiá `.env.example` a `.env` y completá los valores.
-2. Ejecutá: `docker compose up --build`
-3. La API queda en `http://localhost:8081`.
+La API está containerizada, tiene integración continua, está desplegada en la nube, expone métricas para monitoreo y puede correr en Kubernetes, tanto con manifiestos como con Terraform.
 
-### Integración continua
-En cada push a `main`, GitHub Actions instala dependencias, corre los tests con Jest y construye la imagen Docker.
+| Área | Herramienta | Dónde está |
+|---|---|---|
+| Contenedores | Docker + Docker Compose | `Dockerfile`, `docker-compose.yml` |
+| Integración continua | GitHub Actions | `.github/workflows/ci.yml` |
+| Despliegue | Render (Docker, plan gratuito) | https://plataforma-eventos-api.onrender.com |
+| Monitoreo | Prometheus + Grafana | `prometheus/`, `grafana/` |
+| Orquestación | Kubernetes con Kind | `k8s/api.yaml` |
+| Infraestructura como código | Terraform | `terraform/` |
 
-### Despliegue
-(link de Render, cuando lo tengas)
+**Puertos usados en local:** `8080` (con `npm run dev`), `8081` (Docker Compose), `8082` (port-forward de Kubernetes), `9090` (Prometheus) y `3000` (Grafana).
+
+### Docker
+
+La imagen parte de `node:22-bookworm-slim`, instala solo las dependencias de producción (`npm ci --omit=dev`), copia únicamente `src/` y corre con el usuario `node` (sin permisos de root). El `.dockerignore` deja afuera `.env`, `node_modules`, tests y docs, así no viajan secretos dentro de la imagen.
+
+### Docker Compose
+
+Levanta cuatro servicios:
+
+| Servicio | Imagen | Puerto | Notas |
+|---|---|---|---|
+| `app` | build local | `8081` → `8080` | Usa el `.env` y apunta a la base del servicio `mongo` |
+| `mongo` | `mongo:7` | — | Healthcheck y volumen persistente; la API espera a que esté sana |
+| `prometheus` | `prom/prometheus:v2.55.1` | `9090` | Lee `prometheus/prometheus.yml` |
+| `grafana` | `grafana/grafana:11.3.0` | `3000` | Usuario `admin`; la contraseña se define con `GRAFANA_ADMIN_PASSWORD` (por defecto `admin`) |
+
+```bash
+# 1. Crear el .env a partir del ejemplo y completar los valores
+cp .env.example .env        # en Windows (PowerShell): copy .env.example .env
+
+# 2. Levantar todo
+docker compose up --build
+
+# 3. Verificar
+curl http://localhost:8081/api/health
+```
+
+### Integración continua (GitHub Actions)
+
+En cada push y pull request a `main` corren dos jobs, el segundo solo si el primero pasa:
+
+1. **test:** instala dependencias con `npm ci` y ejecuta los tests con Jest.
+2. **docker-build:** construye la imagen Docker para comprobar que el `Dockerfile` funciona.
+
+### Despliegue en Render
+
+La API está desplegada con Docker en el plan gratuito de Render, conectada a MongoDB Atlas:
+
+- URL: https://plataforma-eventos-api.onrender.com
+- Health check: https://plataforma-eventos-api.onrender.com/api/health
+
+> En el plan gratuito, Render pausa el servicio tras un período sin tráfico, así que la primera petición puede tardar unos segundos en responder.
+
+### Monitoreo con Prometheus y Grafana
+
+La API expone `GET /metrics` en formato Prometheus, con:
+
+- `http_requests_total` — total de peticiones, por método, ruta y código de estado.
+- `http_request_duration_seconds` — histograma de duración de las peticiones.
+- Métricas internas de Node.js (memoria, CPU, event loop).
+
+Prometheus consulta la API cada 15 segundos. Para verlo:
+
+1. Con `docker compose up`, abrí Prometheus en http://localhost:9090 → *Status → Targets*: el target `plataforma-eventos-api` debe figurar **UP**.
+2. Abrí Grafana en http://localhost:3000 e ingresá con `admin`.
+3. Con Prometheus como datasource (`http://prometheus:9090`), el dashboard **"Plataforma Eventos API REST - DevOps Monitoring"** muestra: requests por segundo, latencia y errores. 
+
+Consultas útiles en Prometheus:
+
+```promql
+# Requests por segundo
+sum(rate(http_requests_total[1m]))
+
+# Porcentaje de respuestas 5xx
+sum(rate(http_requests_total{status_code=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))
+
+# Latencia p95
+histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))
+```
+
+### Kubernetes con Kind
+
+El manifiesto `k8s/api.yaml` define:
+
+- **Deployment** `api` con **2 réplicas**, `readinessProbe` y `livenessProbe` sobre `/api/health`, y variables de entorno cargadas desde el Secret `api-secrets`.
+- **Service** `api` en el puerto `8080`.
+
+```bash
+# 1. Crear el cluster local
+kind create cluster --name eventos
+
+# 2. Construir la imagen y cargarla en el cluster
+docker build -t plataforma-eventos-api:local .
+kind load docker-image plataforma-eventos-api:local --name eventos
+
+# 3. Crear el Secret con las variables del .env
+kubectl create secret generic api-secrets --from-env-file=.env
+
+# 4. Desplegar
+kubectl apply -f k8s/api.yaml
+kubectl get pods            # 2 pods en Running 1/1
+
+# 5. Probar la API
+kubectl port-forward service/api 8082:8080
+curl http://localhost:8082/api/health
+```
+
+> El Secret se crea desde el `.env` y **nunca se sube al repositorio**. Como el cluster no incluye MongoDB, `MONGO_URL` debe apuntar a una base accesible desde el cluster (por ejemplo, MongoDB Atlas).
+
+### Terraform
+
+La carpeta `terraform/` describe como código el mismo Deployment y Service de la API sobre el cluster de Kind:
+
+| Archivo | Contenido |
+|---|---|
+| `main.tf` | Provider `kubernetes` y los recursos `kubernetes_deployment_v1` y `kubernetes_service_v1` |
+| `variables.tf` | `kube_context` (`kind-eventos`), `image`, `replicas` (2) y `port` (8080) |
+| `outputs.tf` | Nombre del Deployment y del Service creados |
+
+```bash
+# Requisitos: cluster de Kind "eventos" activo, imagen cargada y Secret api-secrets creado
+cd terraform
+terraform init
+terraform plan
+terraform apply
+kubectl get pods            # 2 pods en Running
+
+# Para eliminar todo lo creado
+terraform destroy
+```
+
+> `k8s/api.yaml` y Terraform crean los mismos recursos (`api`), así que se usa **uno u otro**. Si ya aplicaste el YAML, ejecutá `kubectl delete -f k8s/api.yaml` antes del `terraform apply`.
+> El archivo de estado (`terraform.tfstate`) y la carpeta `.terraform/` quedan en local y están excluidos por el `.gitignore`.

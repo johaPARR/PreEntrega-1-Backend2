@@ -1,8 +1,8 @@
-global:
-  scrape_interval: 15s
-
-scrape_configs:
-  - job_name: plataforma-eventos-api
-    metrics_path: /metrics
-    static_configs:
-      - targets: ["app:8080"]
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
