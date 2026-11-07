@@ -96,6 +96,9 @@ Se definen en el archivo `.env` (que **no** se sube al repositorio). El archivo 
 | `MAIL_USER` | Cuenta que envía los emails | `tu_email@gmail.com` |
 | `MAIL_PASS` | Contraseña de la cuenta. En Gmail se usa una **contraseña de aplicación** | `xxxx xxxx xxxx xxxx` |
 | `MAIL_FROM` | Remitente que ven los destinatarios | `"Plataforma de Eventos" <tu_email@gmail.com>` |
+| `CORS_ORIGIN` | Orígenes permitidos para solicitudes CORS, separados por comas | `http://localhost:3000` |
+| `SEED_PASSWORD` | Contraseña para los usuarios creados por el script seed (mínimo 12 caracteres) | `una_clave_de_ejemplo_segura` |
+| `GRAFANA_ADMIN_PASSWORD` | Contraseña del administrador de Grafana en Docker Compose | `una_clave_de_ejemplo_segura` |
 
 > Si el envío de email falla (credenciales incorrectas o sin conexión), la inscripción **igual se guarda**: el error de correo no cancela la operación.
 
@@ -303,30 +306,32 @@ Hay tres roles: `user` (por defecto), `organizer` y `admin`.
 
 ## Usuarios de prueba
 
-Para facilitar la corrección y las pruebas de los tres roles, se incluye un script que puebla automáticamente la base de datos con usuarios y eventos de prueba:
+El proyecto incluye un script para crear usuarios y eventos de prueba con los roles `admin`, `organizer` y `user`.
+
+Para ejecutarlo:
 
 ```bash
 npm run seed
 ```
 
-Esto crea los siguientes usuarios (todos con la contraseña `123456`):
-- **Admin:** `admin@test.com` (permisos administrativos totales, `GET /api/users`)
-- **Organizador:** `organizer@test.com` (creación de eventos y gestión de eventos propios)
-- **Usuario:** `user@test.com` (inscripciones, consulta de tickets y cancelación)
+**Requisitos de seguridad antes de ejecutarlo:**
 
-Además, crea eventos de prueba (uno publicado con cupo para inscripciones y uno en borrador).
+- Configurar `MONGO_URL` para que apunte exclusivamente a una base de datos local o de desarrollo, nunca a producción.
+- Configurar `NODE_ENV=development`.
+- Definir `SEED_PASSWORD` en el archivo `.env`, con una contraseña propia de al menos 12 caracteres.
+- No compartir ni publicar el archivo `.env` ni la contraseña utilizada.
 
-### Alternativa manual
-Como el registro público no permite elegir el rol por seguridad, para crearlos a mano:
+El script está deshabilitado cuando `NODE_ENV=production`.
 
-1. Registrar los usuarios con `POST /api/sessions/register` (`user@test.com`, `organizer@test.com`, `admin@test.com` con `123456`).
-2. Abrir la colección `users` en MongoDB Atlas o Compass.
-3. Editar el campo `role` de `organizer@test.com` a `organizer` y el de `admin@test.com` a `admin`.
-4. Iniciar sesión con cada usuario (el rol viaja en el JWT).
+El poblado crea las siguientes cuentas de prueba:
 
-> El campo `role` está marcado como inmutable en el modelo: solo se puede cambiar directamente en la base de datos o mediante el script de seed, no a través del body de la API.
+| Rol | Email |
+|---|---|
+| Admin | `admin@test.com` |
+| Organizer | `organizer@test.com` |
+| User | `user@test.com` |
 
----
+También crea dos eventos de demostración.
 
 ## Flujo de autenticación
 
@@ -411,7 +416,7 @@ Los ejemplos usan `http://localhost:8080`. Las rutas protegidas necesitan la coo
   "first_name": "Ana",
   "last_name": "García",
   "email": "ana@test.com",
-  "password": "123456"
+  "password": "tu_password_seguro"
 }
 ```
 
@@ -433,7 +438,7 @@ Respuesta `201`:
 ### Login — `POST /api/sessions/login`
 
 ```json
-{ "email": "ana@test.com", "password": "123456" }
+{ "email": "ana@test.com", "password": "tu_password_seguro" }
 ```
 
 Respuesta `200` (y cookie `currentUser` httpOnly):
@@ -724,18 +729,46 @@ Levanta cuatro servicios:
 | `app` | build local | `8081` → `8080` | Usa el `.env` y apunta a la base del servicio `mongo` |
 | `mongo` | `mongo:7` | — | Healthcheck y volumen persistente; la API espera a que esté sana |
 | `prometheus` | `prom/prometheus:v2.55.1` | `9090` | Lee `prometheus/prometheus.yml` |
-| `grafana` | `grafana/grafana:11.3.0` | `3000` | Usuario `admin`; la contraseña se define con `GRAFANA_ADMIN_PASSWORD` (por defecto `admin`) |
+| `grafana` | `grafana/grafana:11.3.0` | `3000` | Usuario `admin`; la contraseña se define obligatoriamente con `GRAFANA_ADMIN_PASSWORD` en `.env`. No hay una contraseña predeterminada. |
+
+
+```
+
+**Para levantar todo el entorno con Docker Compose:**
 
 ```bash
-# 1. Crear el .env a partir del ejemplo y completar los valores
-cp .env.example .env        # en Windows (PowerShell): copy .env.example .env
+# 1. Crear el archivo .env a partir del ejemplo
+copy .env.example .env
+```
 
-# 2. Levantar todo
+Abrí el archivo `.env` y reemplazá los valores de ejemplo por los correspondientes a tu entorno. Configurá especialmente `GRAFANA_ADMIN_PASSWORD` con una contraseña segura.
+
+No compartas ni publiques el archivo `.env`.
+
+```bash
+# 2. Construir y levantar todos los servicios
 docker compose up --build
 
-# 3. Verificar
+# 3. Verificar el estado de los contenedores
+docker compose ps
+
+# 4. Comprobar la API
 curl http://localhost:8081/api/health
 ```
+
+Para detener los servicios:
+
+```bash
+docker compose down
+```
+
+Para detenerlos y eliminar también los volúmenes de datos:
+
+```bash
+docker compose down -v
+```
+
+**Importante:** el último comando elimina los datos persistidos de MongoDB, Prometheus y Grafana.
 
 ### Integración continua (GitHub Actions)
 
@@ -764,7 +797,12 @@ La API expone `GET /metrics` en formato Prometheus, con:
 Prometheus consulta la API cada 15 segundos. Para verlo:
 
 1. Con `docker compose up`, abrí Prometheus en http://localhost:9090 → *Status → Targets*: el target `plataforma-eventos-api` debe figurar **UP**.
-2. Abrí Grafana en http://localhost:3000 e ingresá con `admin`.
+2. Abrí Grafana en [http://localhost:3000](http://localhost:3000) e ingresá con las siguientes credenciales:
+
+   - **Usuario:** `admin`
+   - **Contraseña:** el valor configurado en `GRAFANA_ADMIN_PASSWORD` dentro del archivo `.env`.
+
+   No existe una contraseña predeterminada: debe configurarse antes de iniciar Docker Compose.
 3. Con Prometheus como datasource (`http://prometheus:9090`), el dashboard **"Plataforma Eventos API REST - DevOps Monitoring"** muestra: requests por segundo, latencia y errores. 
 
 Consultas útiles en Prometheus:
